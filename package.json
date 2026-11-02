@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "IT & ELV Infrastructure Asset Management Web Application for Iraq Sitak Villa Project",
   "scripts": {
+    "build": "cd client && npm install && npm run build && cd ../server && npm install",
     "start": "node server/index.js",
     "dev:server": "cd server && node index.js",
     "dev:client": "cd client && npm run dev",
