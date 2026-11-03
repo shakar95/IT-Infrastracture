@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   LayoutDashboard,
   Layers,
@@ -10,12 +10,39 @@ import {
   Languages,
   ShieldCheck,
   Building,
+  ChevronDown,
+  Plus,
+  Check,
+  MapPin,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 
-export default function Navbar({ activeTab, setActiveTab, lang, setLang }) {
+export default function Navbar({
+  activeTab,
+  setActiveTab,
+  lang,
+  setLang,
+  projects = [],
+  activeProject = null,
+  onSwitchProject,
+  onOpenCreateProject,
+}) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
+
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsProjectDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const navItems = [
     { id: 'dashboard', label: t.navDashboard, icon: LayoutDashboard },
@@ -27,37 +54,112 @@ export default function Navbar({ activeTab, setActiveTab, lang, setLang }) {
     { id: 'settings', label: t.navSettings, icon: Settings },
   ];
 
+  const currentProjectName = isKu
+    ? (activeProject?.name_ku || activeProject?.name || t.projectName)
+    : (activeProject?.name || t.projectName);
+
+  const currentLocation = isKu
+    ? (activeProject?.location_ku || activeProject?.location || t.locationTag)
+    : (activeProject?.location || t.locationTag);
+
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
-      {/* Top Project Identification Bar */}
+    <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800">
+      {/* Top Project Identification & Switcher Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo & Title */}
+          {/* Logo & Project Switcher Dropdown */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 p-0.5 shadow-lg shadow-blue-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 p-0.5 shadow-lg shadow-blue-500/20 shrink-0">
               <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
                 <Building className="w-5 h-5 text-blue-400" />
               </div>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                  {t.projectName}
-                </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  {t.systemActive}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                {t.projectSubtitle} • <span className="text-amber-400 font-medium">{t.locationTag}</span>
-              </p>
+
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
+                className="flex items-center gap-2 group text-left rounded-xl p-1 -m-1 hover:bg-slate-800/60 transition"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5 group-hover:text-blue-400 transition">
+                      {currentProjectName}
+                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isProjectDropdownOpen ? 'rotate-180 text-blue-400' : ''}`} />
+                    </h1>
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      {t.systemActive}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 flex items-center gap-1">
+                    <span className="text-slate-400">{t.projectSubtitle} •</span>
+                    <span className="text-amber-400 font-medium">{currentLocation}</span>
+                  </p>
+                </div>
+              </button>
+
+              {/* Projects Switcher Menu */}
+              {isProjectDropdownOpen && (
+                <div className="absolute left-0 mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2 z-50 animate-fadeIn">
+                  <div className="px-3 py-2 text-[11px] font-semibold text-slate-400 border-b border-slate-800/80 flex items-center justify-between">
+                    <span>{isKu ? 'پرۆژە و سایتە بەردەستەکان' : 'Select Project / Site'}</span>
+                    <span className="text-blue-400 font-mono text-[10px]">{projects.length} {isKu ? 'سایت' : 'Sites'}</span>
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto py-1 space-y-1">
+                    {projects.map((proj) => {
+                      const isSelected = activeProject?.id === proj.id;
+                      const pName = isKu ? (proj.name_ku || proj.name) : proj.name;
+                      const pLoc = isKu ? (proj.location_ku || proj.location) : proj.location;
+
+                      return (
+                        <button
+                          key={proj.id}
+                          onClick={() => {
+                            if (onSwitchProject) onSwitchProject(proj);
+                            setIsProjectDropdownOpen(false);
+                          }}
+                          className={`w-full text-left p-2.5 rounded-xl transition flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-blue-600/15 border border-blue-500/30 text-white'
+                              : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                          }`}
+                        >
+                          <div className="truncate">
+                            <span className="font-semibold text-xs block truncate">{pName}</span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1 truncate mt-0.5">
+                              <MapPin className="w-3 h-3 text-amber-400/80 shrink-0" />
+                              {pLoc}
+                            </span>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProjectDropdownOpen(false);
+                        if (onOpenCreateProject) onOpenCreateProject();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold transition active:scale-95"
+                    >
+                      <Plus className="w-4 h-4 text-blue-400" />
+                      <span>{isKu ? '+ دروستکردنی پرۆژە یان سایتی نوێ' : '+ Add New Site / Project'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Right Controls: Language Selector */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1">
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 shadow-inner">
               <button
                 onClick={() => setLang('en')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
@@ -107,4 +209,3 @@ export default function Navbar({ activeTab, setActiveTab, lang, setLang }) {
     </header>
   );
 }
-

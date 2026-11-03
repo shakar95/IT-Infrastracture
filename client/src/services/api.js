@@ -93,6 +93,13 @@ export const api = {
       body: JSON.stringify(params),
     }));
   },
+  async bulkImportBoqModels(items) {
+    return handleResponse(await fetch(`${API_BASE}/boq/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    }));
+  },
 
   // Devices
   async getDevices(params = {}) {
@@ -168,6 +175,23 @@ export const api = {
   },
   async deleteFloorPlan(id) {
     return handleResponse(await fetch(`${API_BASE}/maps/${id}`, {
+      method: 'DELETE',
+    }));
+  },
+
+  // Projects & Sites
+  async getProjects() {
+    return handleResponse(await fetch(`${API_BASE}/projects`));
+  },
+  async createProject(projectData) {
+    return handleResponse(await fetch(`${API_BASE}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(projectData),
+    }));
+  },
+  async deleteProject(id) {
+    return handleResponse(await fetch(`${API_BASE}/projects/${id}`, {
       method: 'DELETE',
     }));
   },

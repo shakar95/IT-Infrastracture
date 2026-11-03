@@ -19,10 +19,14 @@ import {
   Camera,
   Upload,
   MapPin,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import BoqModelDetailsModal from './BoqModelDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
+import ExcelBoqImportModal from './ExcelBoqImportModal';
+import { downloadBoqExcelTemplate } from '../utils/excelBoqUtils';
 
 const compressImage = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
   return new Promise((resolve, reject) => {
@@ -72,6 +76,7 @@ export default function BOQManager({
   onNavigateToMap,
   onCreateCategory,
   onCreateFloorPlan,
+  onBulkImport,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
@@ -84,6 +89,7 @@ export default function BOQManager({
   const activeCategoryObj = categories.find((c) => c.id === activeCategory);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [bulkModalModel, setBulkModalModel] = useState(null);
   const [inspectingModel, setInspectingModel] = useState(null);
@@ -193,21 +199,44 @@ export default function BOQManager({
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{t.boqTitle}</h2>
           <p className="text-xs sm:text-sm text-slate-400">{t.boqSubtitle}</p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Download Excel Template */}
+          <button
+            type="button"
+            onClick={() => downloadBoqExcelTemplate(categories)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow transition active:scale-95 shrink-0"
+            title={isKu ? 'داونلۆدکردنی تێمپلەیتی پێوانەیی ئێکسڵ' : 'Download standard BOQ Excel template'}
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isKu ? 'داونلۆدی تێمپلەیت' : 'Template (.xlsx)'}</span>
+          </button>
+
+          {/* Import from Excel */}
+          <button
+            type="button"
+            onClick={() => setIsExcelModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 shadow transition active:scale-95 shrink-0"
+            title={isKu ? 'هاوردەکردنی کەتەلۆگ لە فایلی ئێکسڵەوە' : 'Import BOQ catalog from Excel'}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isKu ? 'هاوردەکردن لە ئێکسڵ' : 'Import Excel'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => onNavigateToMap && onNavigateToMap()}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow transition active:scale-95 shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow transition active:scale-95 shrink-0"
           >
-            <MapPin className="w-4 h-4 text-blue-400" />
-            <span>{isKu ? 'سایت پلان و نەخشەکان' : 'Site Plans & Maps'}</span>
+            <MapPin className="w-3.5 h-3.5 text-blue-400" />
+            <span>{isKu ? 'نەخشەکان' : 'Maps'}</span>
           </button>
+
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>{t.btnAddModel}</span>
           </button>
         </div>
@@ -804,6 +833,15 @@ export default function BOQManager({
             setFormData((prev) => ({ ...prev, category_id: newCat.id }));
           }
         }}
+        lang={lang}
+      />
+
+      {/* Excel BOQ Bulk Import Modal */}
+      <ExcelBoqImportModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        categories={categories}
+        onImport={onBulkImport}
         lang={lang}
       />
     </div>

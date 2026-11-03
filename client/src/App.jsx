@@ -8,6 +8,7 @@ import AiCameraScanner from './components/AiCameraScanner';
 import AiTroubleshooter from './components/AiTroubleshooter';
 import CategoryBuilder from './components/CategoryBuilder';
 import GuardrailAlert from './components/GuardrailAlert';
+import CreateProjectModal from './components/CreateProjectModal';
 import { api } from './services/api';
 
 export default function App() {
@@ -18,6 +19,9 @@ export default function App() {
   const [boqModels, setBoqModels] = useState([]);
   const [devices, setDevices] = useState([]);
   const [floorPlans, setFloorPlans] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Guardrail alert state
@@ -46,17 +50,34 @@ export default function App() {
   const loadAllData = async () => {
     try {
       setIsLoading(true);
-      const [cats, boqs, devs, maps] = await Promise.all([
+      const [cats, boqs, devs, maps, projs] = await Promise.all([
         api.getCategories().catch(() => []),
         api.getBoqModels().catch(() => []),
         api.getDevices().catch(() => []),
         api.getMaps().catch(() => []),
+        api.getProjects().catch(() => []),
       ]);
 
       setCategories(cats);
       setBoqModels(boqs);
       setDevices(devs);
       setFloorPlans(maps);
+
+      if (Array.isArray(projs) && projs.length > 0) {
+        setProjects(projs);
+        setActiveProject(projs[0]);
+      } else {
+        const defaultProj = {
+          id: 'proj-sitak',
+          name: 'Iraq Sitak Villa Project',
+          name_ku: 'پرۆژەی نایابی ڤێلای سیتەک',
+          location: 'Sitak, Sulaymaniyah, KRI',
+          location_ku: 'سیتەک، سلێمانی',
+          client_name: 'VIP Mountain Estate',
+        };
+        setProjects([defaultProj]);
+        setActiveProject(defaultProj);
+      }
     } catch (err) {
       console.error('Failed to load project infrastructure data:', err);
     } finally {
@@ -122,6 +143,40 @@ export default function App() {
     } catch (err) {
       catchGuardrail(err);
     }
+  };
+
+  const handleBulkImportBoq = async (importedItems) => {
+    try {
+      const res = await api.bulkImportBoqModels(importedItems);
+      if (Array.isArray(res)) {
+        setBoqModels((prev) => {
+          const map = new Map(prev.map((m) => [m.id, m]));
+          res.forEach((item) => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+      }
+      return res;
+    } catch (err) {
+      catchGuardrail(err);
+      throw err;
+    }
+  };
+
+  // Multi-Project / Site Management Actions
+  const handleCreateProject = async (projectData) => {
+    try {
+      const created = await api.createProject(projectData);
+      setProjects((prev) => [...prev, created]);
+      setActiveProject(created);
+      return created;
+    } catch (err) {
+      alert(err.message || 'Failed to create project');
+      throw err;
+    }
+  };
+
+  const handleSwitchProject = (project) => {
+    setActiveProject(project);
   };
 
   // Device Actions
@@ -251,6 +306,10 @@ export default function App() {
         setActiveTab={setActiveTab}
         lang={lang}
         setLang={setLang}
+        projects={projects}
+        activeProject={activeProject}
+        onSwitchProject={handleSwitchProject}
+        onOpenCreateProject={() => setIsCreateProjectOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -285,6 +344,7 @@ export default function App() {
                 onUpdateModel={handleUpdateBoqModel}
                 onDeleteModel={handleDeleteBoqModel}
                 onBulkProvision={handleBulkProvision}
+                onBulkImport={handleBulkImportBoq}
                 onCreateDevice={handleCreateDevice}
                 onUpdateStatus={handleUpdateStatus}
                 onNavigateToMap={handleNavigateToMap}
@@ -361,6 +421,14 @@ export default function App() {
       <GuardrailAlert
         alert={guardrailAlert}
         onClose={() => setGuardrailAlert(null)}
+        lang={lang}
+      />
+
+      {/* Create Project / Site Modal */}
+      <CreateProjectModal
+        isOpen={isCreateProjectOpen}
+        onClose={() => setIsCreateProjectOpen(false)}
+        onCreateProject={handleCreateProject}
         lang={lang}
       />
     </div>

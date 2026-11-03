@@ -10,6 +10,7 @@ import devicesRoutes from './routes/devices.routes.js';
 import categoriesRoutes from './routes/categories.routes.js';
 import mapsRoutes from './routes/maps.routes.js';
 import aiRoutes from './routes/ai.routes.js';
+import projectsRoutes from './routes/projects.routes.js';
 import { mockProjectSettings } from './services/mockData.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,7 @@ app.use('/api/devices', devicesRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/maps', mapsRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/projects', projectsRoutes);
 
 // Serve Frontend Build in production or unified preview mode
 const clientDistPath = path.resolve(__dirname, '../client/dist');

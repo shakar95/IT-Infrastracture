@@ -99,6 +99,67 @@ router.post('/', async (req, res) => {
   }
 });
 
+// POST /api/boq/batch - Bulk import BOQ items from Excel
+router.post('/batch', async (req, res) => {
+  try {
+    const { items = [] } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items provided for batch import' });
+    }
+
+    const defaultImg = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+
+    const prepared = items.map((item) => ({
+      category_id: item.category_id,
+      brand: (item.brand || 'Generic').trim(),
+      model: (item.model || `MOD-${Math.floor(1000 + Math.random() * 9000)}`).trim(),
+      description: item.description || '',
+      total_qty: Math.max(1, Number(item.total_qty) || 1),
+      unit_cost: Number(item.unit_cost) || 0,
+      product_image_url: item.product_image_url || defaultImg,
+      manual_pdf_url: item.manual_pdf_url || null,
+      allowed_zones: Array.isArray(item.allowed_zones) && item.allowed_zones.length > 0 ? item.allowed_zones : ['indoor'],
+      is_rack_mounted: Boolean(item.is_rack_mounted),
+      rack_unit_size: Number(item.rack_unit_size) || 0,
+      custom_specs: item.custom_specs || {},
+    }));
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('boq_models')
+        .upsert(prepared, { onConflict: 'brand,model' })
+        .select('*, categories(*)');
+
+      if (error) {
+        console.error('Supabase BOQ batch error:', error);
+        throw error;
+      }
+      return res.status(201).json(data);
+    }
+
+    // In-memory fallback
+    const added = [];
+    for (const p of prepared) {
+      const existingIdx = mockBoqModels.findIndex(
+        (m) => m.brand.toLowerCase() === p.brand.toLowerCase() && m.model.toLowerCase() === p.model.toLowerCase()
+      );
+      if (existingIdx !== -1) {
+        mockBoqModels[existingIdx] = { ...mockBoqModels[existingIdx], ...p, updated_at: new Date().toISOString() };
+        added.push(mockBoqModels[existingIdx]);
+      } else {
+        const newM = { ...p, id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, created_at: new Date().toISOString() };
+        mockBoqModels.push(newM);
+        added.push(newM);
+      }
+    }
+
+    res.status(201).json(added);
+  } catch (err) {
+    console.error('Error in BOQ batch import:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT update BOQ model
 router.put('/:id', async (req, res) => {
   try {
