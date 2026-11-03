@@ -20,6 +20,10 @@ export const translations = {
     // Dashboard Overview
     totalBoqModels: "BOQ Catalog Models",
     totalDevices: "Provisioned Devices",
+    labeledDevices: "Labeled Devices",
+    unlabeledDevices: "Unlabeled Devices",
+    totalRequiredUnits: "Total BOQ Units",
+    labelingProgress: "Labeling Progress",
     verifiedRate: "Verification Rate",
     activeVlans: "Configured VLANs",
     rackUnitsOccupied: "Rack Units Allocated",
@@ -185,6 +189,10 @@ export const translations = {
     // Dashboard Overview
     totalBoqModels: "مۆدێلەکانی کەرەستە (BOQ)",
     totalDevices: "ئامێرە تۆمارکراوەکان",
+    labeledDevices: "ئامێرە لەیبڵکراوەکان",
+    unlabeledDevices: "لەیبڵ نەکراوە (ماوە)",
+    totalRequiredUnits: "کۆی گشتی کەرەستەکان",
+    labelingProgress: "ڕێژەی لەیبڵکردن",
     verifiedRate: "ڕێژەی پشتڕاستکراوە",
     activeVlans: "تۆڕە جیاکراوەکان (VLAN)",
     rackUnitsOccupied: "یەکە داگیرکراوەکانی ڕاک (U)",

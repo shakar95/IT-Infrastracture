@@ -20,6 +20,10 @@ import {
   PhoneCall,
   Bell,
   Key,
+  Tag,
+  AlertCircle,
+  Plus,
+  Barcode,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 
@@ -53,6 +57,8 @@ export default function DashboardOverview({
   const totalBoqModelsCount = boqModels.length;
   const totalTargetQty = boqModels.reduce((acc, m) => acc + (m.total_qty || 0), 0);
   const totalProvisionedDevices = devices.length;
+  const unlabeledCount = Math.max(0, totalTargetQty - totalProvisionedDevices);
+  const labelProgressRate = totalTargetQty > 0 ? Math.round((totalProvisionedDevices / totalTargetQty) * 100) : 0;
 
   const verifiedDevices = devices.filter((d) => d.installation_status === 'Verified').length;
   const verifiedRate = totalProvisionedDevices > 0 ? Math.round((verifiedDevices / totalProvisionedDevices) * 100) : 0;
@@ -60,44 +66,49 @@ export default function DashboardOverview({
   const uniqueVlans = new Set(devices.map((d) => d.vlan_id).filter(Boolean)).size;
   const rackDevicesCount = devices.filter((d) => d.placement_zone === 'rack').length;
 
-  // Stat Cards Config
+  // Stat Cards Config (Featuring Labeled & Unlabeled Metrics)
   const stats = [
     {
-      title: t.totalBoqModels,
-      value: totalBoqModelsCount,
-      sub: `${totalTargetQty} total units specified in BOQ`,
+      title: t.totalRequiredUnits || (isKu ? 'کۆی گشتی کەرەستەکان' : 'Total BOQ Units'),
+      value: `${totalTargetQty}`,
+      unit: isKu ? 'دانە' : 'Units',
+      sub: isKu ? `لە ${totalBoqModelsCount} مۆدێلی کەتەلۆگ` : `Across ${totalBoqModelsCount} BOQ models`,
       icon: Layers,
       color: 'from-blue-500 to-indigo-500',
       tab: 'boq',
     },
     {
-      title: t.totalDevices,
-      value: totalProvisionedDevices,
-      sub: `${totalTargetQty - totalProvisionedDevices} units remaining to provision`,
-      icon: Cpu,
-      color: 'from-purple-500 to-pink-500',
-      tab: 'devices',
-    },
-    {
-      title: t.verifiedRate,
-      value: `${verifiedRate}%`,
-      sub: `${verifiedDevices} of ${totalProvisionedDevices} commissioned`,
-      icon: CheckCircle2,
+      title: t.labeledDevices || (isKu ? 'ئامێرە لەیبڵکراوەکان' : 'Labeled Devices'),
+      value: `${totalProvisionedDevices}`,
+      unit: isKu ? 'لەیبڵکراو' : 'Labeled',
+      sub: isKu ? `${labelProgressRate}% لە کۆی پێداویستییەکان` : `${labelProgressRate}% of total inventory`,
+      icon: Tag,
       color: 'from-emerald-500 to-teal-500',
       tab: 'devices',
     },
     {
-      title: t.activeVlans,
-      value: uniqueVlans || 5,
-      sub: 'VLAN 10, 20, 30, 40, 50 isolated',
-      icon: Network,
+      title: t.unlabeledDevices || (isKu ? 'لەیبڵ نەکراوە (ماوە)' : 'Unlabeled / Remaining'),
+      value: `${unlabeledCount}`,
+      unit: isKu ? 'ماوە' : 'Remaining',
+      sub: isKu ? `${100 - labelProgressRate}% ماون لەیبڵ بکرێن` : `${100 - labelProgressRate}% awaiting labeling`,
+      icon: AlertCircle,
       color: 'from-amber-500 to-orange-500',
+      tab: 'boq',
+    },
+    {
+      title: t.verifiedRate,
+      value: `${verifiedRate}%`,
+      unit: '',
+      sub: isKu ? `${verifiedDevices} لە ${totalProvisionedDevices} پشتڕاستکراوە` : `${verifiedDevices} of ${totalProvisionedDevices} commissioned`,
+      icon: CheckCircle2,
+      color: 'from-purple-500 to-pink-500',
       tab: 'devices',
     },
     {
       title: t.rackUnitsOccupied,
-      value: `${rackDevicesCount} Units`,
-      sub: 'Main 42U Server Rack A (Sitak)',
+      value: `${rackDevicesCount}`,
+      unit: isKu ? 'یەکە (U)' : 'Units',
+      sub: isKu ? 'ژووری سێرڤەری سەرەکی ڤێلا' : 'Main 42U Server Rack A (Sitak)',
       icon: Server,
       color: 'from-cyan-500 to-blue-500',
       tab: 'map',
@@ -184,14 +195,120 @@ export default function DashboardOverview({
                 </div>
               </div>
               <div className="mt-3">
-                <span className="text-2xl font-bold text-white group-hover:text-blue-400 transition">
-                  {stat.value}
-                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-white group-hover:text-blue-400 transition">
+                    {stat.value}
+                  </span>
+                  {stat.unit && <span className="text-xs font-semibold text-slate-400">{stat.unit}</span>}
+                </div>
                 <p className="mt-1 text-[11px] text-slate-400 truncate">{stat.sub}</p>
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Visual Labeling Progress & Inventory Breakdown Card */}
+      <div className="p-5 sm:p-6 bg-slate-900/80 border border-slate-800 rounded-3xl space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-blue-500/15 text-blue-400 border border-blue-500/20 shadow-sm">
+              <Barcode className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white tracking-tight">
+                {isKu ? 'دۆخی لەیبڵکردن و تۆمارکردنی کەرەستەکانی پرۆژەی سیتەک' : 'Sitak Villa Equipment Labeling & Provisioning Status'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isKu
+                  ? 'بەراوردی ڕێژەی ئامێرە لەیبڵکراوەکان بەرامبەر ئەوانەی هێشتا لەیبڵ نەکراون بەپێی کەتەلۆکی فەرمیی BOQ'
+                  : 'Real-time overview of labeled/provisioned devices versus remaining unlabeled inventory'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('devices')}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>{isKu ? '+ لەیبڵکردنی ئامێری نوێ' : '+ Label / Provision Device'}</span>
+          </button>
+        </div>
+
+        {/* Multi-segmented Visual Progress Bar */}
+        <div className="space-y-2 pt-1">
+          <div className="flex justify-between text-xs text-slate-300 font-medium">
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+              <span>{isKu ? 'ئامێرە لەیبڵکراوەکان:' : 'Labeled Units:'} <strong className="text-emerald-400 font-bold">{totalProvisionedDevices}</strong> ({labelProgressRate}%)</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50" />
+              <span>{isKu ? 'لەیبڵ نەکراوە (ماوە):' : 'Unlabeled (Remaining):'} <strong className="text-amber-300 font-bold">{unlabeledCount}</strong> ({100 - labelProgressRate}%)</span>
+            </span>
+          </div>
+
+          <div className="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800 flex shadow-inner">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
+              style={{ width: `${labelProgressRate}%` }}
+              title={`Labeled: ${totalProvisionedDevices}`}
+            />
+            <div
+              className="h-full bg-gradient-to-r from-amber-500/80 to-amber-600/80 rounded-full transition-all duration-700"
+              style={{ width: `${100 - labelProgressRate}%` }}
+              title={`Unlabeled: ${unlabeledCount}`}
+            />
+          </div>
+        </div>
+
+        {/* 3 Summary Statistics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div
+            onClick={() => {
+              if (onSelectCategory) onSelectCategory('all');
+              else setActiveTab('boq');
+            }}
+            className="cursor-pointer p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 hover:border-blue-500/40 transition flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[11px] text-slate-400 block">{isKu ? 'کۆی گشتی کەرەستەکان (BOQ)' : 'Total Required (BOQ)'}</span>
+              <span className="text-xl font-bold text-white">{totalTargetQty} <span className="text-xs font-normal text-slate-400">{isKu ? 'یەکە' : 'Units'}</span></span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400">
+              <Layers className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('devices')}
+            className="cursor-pointer p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500/60 transition flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[11px] text-emerald-300 font-semibold block">{isKu ? '✅ لەیبڵکراوە (تۆمارکراو)' : '✅ Labeled Devices'}</span>
+              <span className="text-xl font-bold text-emerald-400">{totalProvisionedDevices} <span className="text-xs font-normal text-emerald-300">({labelProgressRate}%)</span></span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div
+            onClick={() => {
+              if (onSelectCategory) onSelectCategory('all');
+              else setActiveTab('boq');
+            }}
+            className="cursor-pointer p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 hover:border-amber-500/60 transition flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[11px] text-amber-300 font-semibold block">{isKu ? '⏳ لەیبڵ نەکراوە (ماوە)' : '⏳ Unlabeled / Remaining'}</span>
+              <span className="text-xl font-bold text-amber-300">{unlabeledCount} <span className="text-xs font-normal text-amber-300">({100 - labelProgressRate}%)</span></span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Category Breakdown Section (11 ELV Categories) */}
@@ -229,6 +346,7 @@ export default function DashboardOverview({
               const m = boqModels.find((model) => model.id === d.boq_model_id);
               return m && m.category_id === cat.id;
             }).length;
+            const unprovCount = Math.max(0, totalQty - provCount);
 
             const progress = totalQty > 0 ? Math.min(100, Math.round((provCount / totalQty) * 100)) : 0;
 
@@ -270,10 +388,20 @@ export default function DashboardOverview({
                   </p>
                 </div>
 
+                {/* Labeled vs Unlabeled Badges */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
+                    {isKu ? `لەیبڵکراو: ${provCount}` : `Labeled: ${provCount}`}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold">
+                    {isKu ? `نەکراو: ${unprovCount}` : `Unlabeled: ${unprovCount}`}
+                  </span>
+                </div>
+
                 {/* Progress Bar */}
                 <div className="mt-3 pt-3 border-t border-slate-800/60">
                   <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                    <span>Provisioning</span>
+                    <span>{isKu ? 'ڕێژەی لەیبڵکردن' : 'Labeling Progress'}</span>
                     <span className="font-semibold text-slate-200">{progress}%</span>
                   </div>
                   <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
