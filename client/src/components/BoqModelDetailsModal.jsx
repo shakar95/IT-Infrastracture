@@ -23,16 +23,20 @@ import {
   Network,
   Cpu,
   Eye,
+  Edit2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 
 export default function BoqModelDetailsModal({
   model,
   category,
+  categories = [],
   devices = [],
   floorPlans = [],
   isOpen,
   onClose,
+  initialTab = 'provision',
+  onUpdateModel,
   onUpdateTotalQty,
   onCreateDevice,
   onUpdateStatus,
@@ -48,13 +52,39 @@ export default function BoqModelDetailsModal({
   const modelDevices = devices.filter((d) => d.boq_model_id === model.id);
   const provisionedCount = modelDevices.length;
 
-  // Active Tab inside modal: 'details' | 'provision' | 'instances' | 'barcode'
-  const [activeTab, setActiveTab] = useState('provision');
+  // Active Tab inside modal: 'details' | 'provision' | 'instances' | 'barcode' | 'edit'
+  const [activeTab, setActiveTab] = useState(initialTab || 'provision');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, model?.id]);
 
   // Quantity edit state
   const [targetQty, setTargetQty] = useState(model.total_qty || 1);
   const [isUpdatingQty, setIsUpdatingQty] = useState(false);
   const [qtySavedToast, setQtySavedToast] = useState(false);
+
+  // Edit BOQ Model full state
+  const [editForm, setEditForm] = useState({
+    description: '',
+    brand: '',
+    model: '',
+    category_id: '',
+    total_qty: 1,
+    unit_cost: 0,
+    product_image_url: '',
+    manual_pdf_url: '',
+    allowed_zones: ['indoor'],
+    is_rack_mounted: false,
+    rack_unit_size: 1,
+    custom_specs_text: '',
+  });
+
+  const [newLocationInput, setNewLocationInput] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editSavedToast, setEditSavedToast] = useState(false);
 
   // Fullscreen image zoom
   const [isImageLightboxOpen, setIsImageLightboxOpen] = useState(false);
@@ -91,10 +121,125 @@ export default function BoqModelDetailsModal({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Reset targetQty when model changes
+  // Reset targetQty and editForm when model changes
   useEffect(() => {
-    setTargetQty(model.total_qty || 1);
-  }, [model]);
+    if (model) {
+      setTargetQty(model.total_qty || 1);
+      setEditForm({
+        description: model.description || '',
+        brand: model.brand || '',
+        model: model.model || '',
+        category_id: model.category_id || (category?.id || ''),
+        total_qty: model.total_qty || 1,
+        unit_cost: model.unit_cost || 0,
+        product_image_url: model.product_image_url || '',
+        manual_pdf_url: model.manual_pdf_url || '',
+        allowed_zones: Array.isArray(model.allowed_zones) && model.allowed_zones.length > 0 ? [...model.allowed_zones] : ['indoor'],
+        is_rack_mounted: Boolean(model.is_rack_mounted),
+        rack_unit_size: model.rack_unit_size || 1,
+        custom_specs_text: model.custom_specs && typeof model.custom_specs === 'object' ? JSON.stringify(model.custom_specs, null, 2) : '',
+      });
+    }
+  }, [model, category]);
+
+  // Handle Zone Toggle
+  const handleToggleZone = (zoneKey) => {
+    setEditForm((prev) => {
+      const exists = prev.allowed_zones.includes(zoneKey);
+      if (exists) {
+        if (prev.allowed_zones.length <= 1) {
+          alert(isKu ? 'دەبێت لانیکەم یەک شوێن دیاریکراو بێت' : 'At least one location must remain selected');
+          return prev;
+        }
+        return {
+          ...prev,
+          allowed_zones: prev.allowed_zones.filter((z) => z !== zoneKey),
+        };
+      } else {
+        return {
+          ...prev,
+          allowed_zones: [...prev.allowed_zones, zoneKey],
+        };
+      }
+    });
+  };
+
+  // Handle Adding Custom Location Tag
+  const handleAddCustomLocation = (e) => {
+    if (e) e.preventDefault();
+    const loc = newLocationInput.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
+    if (!loc) return;
+    if (editForm.allowed_zones.includes(loc)) {
+      setNewLocationInput('');
+      return;
+    }
+    setEditForm((prev) => ({
+      ...prev,
+      allowed_zones: [...prev.allowed_zones, loc],
+    }));
+    setNewLocationInput('');
+  };
+
+  // Handle Removing Location Tag
+  const handleRemoveLocation = (loc) => {
+    if (editForm.allowed_zones.length <= 1) {
+      alert(isKu ? 'دەبێت لانیکەم یەک شوێن هەبێت' : 'At least one location is required');
+      return;
+    }
+    setEditForm((prev) => ({
+      ...prev,
+      allowed_zones: prev.allowed_zones.filter((z) => z !== loc),
+    }));
+  };
+
+  // Handle Full Model Update (Description, Locations, Brand, Model, Qty, etc.)
+  const handleSaveModelEdit = async (e) => {
+    if (e) e.preventDefault();
+    if (!editForm.brand.trim() || !editForm.model.trim()) {
+      alert(isKu ? 'براند و مۆدێل پێویستن' : 'Brand and Model are required');
+      return;
+    }
+
+    let parsedSpecs = {};
+    if (editForm.custom_specs_text.trim()) {
+      try {
+        parsedSpecs = JSON.parse(editForm.custom_specs_text);
+      } catch {
+        alert(isKu ? 'تایبەتمەندییەکان دەبێت فۆرماتی دروستی JSON بن' : 'Custom specs must be valid JSON format');
+        return;
+      }
+    }
+
+    try {
+      setIsSavingEdit(true);
+      const updates = {
+        description: editForm.description.trim(),
+        brand: editForm.brand.trim(),
+        model: editForm.model.trim(),
+        category_id: editForm.category_id,
+        total_qty: Number(editForm.total_qty) || 1,
+        unit_cost: Number(editForm.unit_cost) || 0,
+        product_image_url: editForm.product_image_url.trim() || null,
+        manual_pdf_url: editForm.manual_pdf_url.trim() || null,
+        allowed_zones: editForm.allowed_zones.length > 0 ? editForm.allowed_zones : ['indoor'],
+        is_rack_mounted: Boolean(editForm.is_rack_mounted),
+        rack_unit_size: editForm.is_rack_mounted ? (Number(editForm.rack_unit_size) || 1) : 0,
+        custom_specs: parsedSpecs,
+      };
+
+      const updater = onUpdateModel || onUpdateTotalQty;
+      if (updater) {
+        await updater(model.id, updates);
+        setTargetQty(updates.total_qty);
+        setEditSavedToast(true);
+        setTimeout(() => setEditSavedToast(false), 3000);
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to save changes');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   // Handle Qty Update
   const handleSaveQty = async () => {
@@ -203,12 +348,26 @@ export default function BoqModelDetailsModal({
               </div>
             </div>
 
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('edit')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                  activeTab === 'edit'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                    : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700 hover:bg-slate-750'
+                }`}
+              >
+                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isKu ? 'دەستکاریکردنی کەرەستە و لۆکەیشن' : 'Edit Specs & Locations'}</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Modal Navigation Tabs */}
@@ -249,6 +408,18 @@ export default function BoqModelDetailsModal({
             >
               <FileText className="w-4 h-4" />
               <span>{isKu ? 'کەتەلۆگ و زانیاری کەرەستە' : 'Catalog & Quantity Specs'}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('edit')}
+              className={`py-3 px-3.5 border-b-2 flex items-center gap-2 transition ${
+                activeTab === 'edit'
+                  ? 'border-amber-500 text-amber-400 font-bold'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Edit2 className="w-4 h-4 text-amber-400" />
+              <span>{isKu ? 'دەستکاریکردنی دیسکریپشن و لۆکەیشن' : 'Edit Specs & Locations'}</span>
             </button>
           </div>
 
@@ -698,10 +869,20 @@ export default function BoqModelDetailsModal({
                 {/* Specs Details */}
                 <div className="md:col-span-7 space-y-4">
                   <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Product Description:
-                    </span>
-                    <p className="text-xs text-slate-300 leading-relaxed">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        Product Description:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('edit')}
+                        className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-semibold transition"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>{isKu ? 'دەستکاریکردنی دیسکریپشن' : 'Edit Description'}</span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans">
                       {model.description || 'Enterprise ELV hardware component for Sitak Villa infrastructure.'}
                     </p>
                   </div>
@@ -721,14 +902,24 @@ export default function BoqModelDetailsModal({
 
                   {/* Allowed Zones */}
                   <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
-                      Allowed Physical Zones:
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                        Allowed Physical Zones & Locations:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('edit')}
+                        className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-semibold transition"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{isKu ? '+ زیادکردنی لۆکەیشن' : '+ Add Location'}</span>
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {model.allowed_zones?.map((z) => (
                         <span
                           key={z}
-                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700"
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 font-mono"
                         >
                           {z === 'indoor'
                             ? 'Indoor (ناو ڤێلا)'
@@ -736,7 +927,9 @@ export default function BoqModelDetailsModal({
                             ? 'Outdoor (دەرەوە)'
                             : z === 'rack'
                             ? 'Server Rack (ڕاک)'
-                            : 'Safe Room'}
+                            : z === 'safe_room'
+                            ? 'Safe Room'
+                            : z}
                         </span>
                       ))}
                     </div>
@@ -760,6 +953,350 @@ export default function BoqModelDetailsModal({
                   )}
                 </div>
               </div>
+            )}
+
+            {/* TAB 4: EDIT BOQ MODEL, DESCRIPTION & LOCATIONS */}
+            {activeTab === 'edit' && (
+              <form onSubmit={handleSaveModelEdit} className="space-y-6 animate-fadeIn">
+                {/* Edit Success Toast */}
+                {editSavedToast && (
+                  <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm flex items-center justify-between shadow-lg">
+                    <div className="flex items-center gap-2.5">
+                      <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <span className="font-semibold">
+                        {isKu
+                          ? 'گۆڕانکارییەکانی وەسف، لۆکەیشن و مۆدێل بە سەرکەوتوویی لە خشتەی BOQ پاشەکەوت کران!'
+                          : 'BOQ Model description, locations & specifications saved successfully!'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('details')}
+                      className="text-xs font-semibold text-emerald-400 underline hover:text-emerald-200"
+                    >
+                      {isKu ? 'بینینی ئەنجام' : 'View Result'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Section 1: Product Description */}
+                <div className="p-5 rounded-2xl bg-amber-950/20 border-2 border-amber-500/40 space-y-2 shadow-inner">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs sm:text-sm font-bold text-amber-300 flex items-center gap-2">
+                      <Edit2 className="w-4 h-4 text-amber-400" />
+                      <span>{isKu ? 'وەسفی کەرەستە لە خشتەی BOQ (Description)' : 'Product Description in BOQ *'}</span>
+                    </label>
+                    <span className="text-[11px] text-amber-400/80 font-mono">
+                      {editForm.description.length} chars
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {isKu
+                      ? 'ئەم دەقە ڕاستەوخۆ لەسەر کارتی ئەم ئامێرە لە بەشی BOQ پیشان دەدرێت و دەتوانیت هەرکات بتەوێت دەستکاری بکەیت:'
+                      : 'This text is displayed on the BOQ card on the dashboard and catalog view:'}
+                  </p>
+                  <textarea
+                    rows={4}
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    placeholder="e.g. SERVIDOR ARANTIACAST LITE MAX.80 PTOS - Hospitality Google Cast streaming controller appliance"
+                    className="w-full bg-slate-950 border border-amber-500/50 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 leading-relaxed font-sans"
+                    required
+                  />
+                </div>
+
+                {/* Section 2: Allowed Locations / Physical Placement Zones */}
+                <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-blue-400" />
+                      <h3 className="text-xs sm:text-sm font-bold text-white">
+                        {isKu ? 'لۆکەیشن و شوێنە ڕێپێدراوەکان بۆ ئەم ئامێرە' : 'Allowed Physical Placement Zones & Locations'}
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      ({editForm.allowed_zones.length} {isKu ? 'شوێن چالاکە' : 'active'})
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {isKu
+                      ? 'دیاریکردنی ئەو ناوچە و نهۆمانەی کە ئەم ئامێرەی لێ دادەنرێت (سیستەمەکە ڕێگری لە دانانی ئامێر لە دەرەوەی ئەم شوێنانە دەکات):'
+                      : 'Specify the zones and locations where this device is permitted to be installed (Smart Placement Guardrail):'}
+                  </p>
+
+                  {/* Standard Predefined Zone Chips */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                      {isKu ? 'شوێنە ستانداردەکانی ڤێلا (کلیک بکە بۆ چالاککردن / ناچالاککردن):' : 'Standard Villa Zones (Click to toggle):'}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'indoor', labelKu: 'ناو ڤێلا (Indoor)', labelEn: 'Indoor Villa' },
+                        { id: 'outdoor', labelKu: 'دەرەوە و باخچە (Outdoor)', labelEn: 'Outdoor Grounds' },
+                        { id: 'rack', labelKu: 'ناو ڕاکی سێرڤەر (Server Rack)', labelEn: 'Server Rack' },
+                        { id: 'safe_room', labelKu: 'ژووری پارێزراو (Safe Room)', labelEn: 'Safe Room' },
+                        { id: 'terrace', labelKu: 'باڵکۆن و سەربان (Terrace & Roof)', labelEn: 'Terrace & Roof' },
+                        { id: 'pool', labelKu: 'مەلەوانگە (Swimming Pool)', labelEn: 'Swimming Pool Area' },
+                        { id: 'gate', labelKu: 'دەروازە و پارکینگ (Main Gate)', labelEn: 'Main Gate & Parking' },
+                        { id: 'cinema', labelKu: 'ژووری سینەما (Home Cinema)', labelEn: 'Home Cinema Room' },
+                      ].map((zone) => {
+                        const isSelected = editForm.allowed_zones.includes(zone.id);
+                        return (
+                          <button
+                            key={zone.id}
+                            type="button"
+                            onClick={() => handleToggleZone(zone.id)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-900/30'
+                                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-850'
+                            }`}
+                          >
+                            <Check className={`w-3.5 h-3.5 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                            <span>{isKu ? zone.labelKu : zone.labelEn}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Add Custom Location Input Field */}
+                  <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                    <label className="block text-[11px] font-semibold text-slate-300">
+                      {isKu ? '+ زیادکردنی ناوی لۆکەیشنی تر بە دڵی خۆت:' : '+ Add Custom Location Name:'}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newLocationInput}
+                        onChange={(e) => setNewLocationInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomLocation();
+                          }
+                        }}
+                        placeholder={isKu ? 'ناوی شوێنەکە بنووسە (بۆ نموونە: Majlis, Gym, Basement Plant Room)...' : 'Type custom location name (e.g. Majlis, Gym, Roof)...'}
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomLocation}
+                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition active:scale-95 shrink-0"
+                      >
+                        {isKu ? 'زیادکردنی لۆکەیشن' : '+ Add Location'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Currently Selected Location Chips */}
+                  <div className="pt-2">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider block mb-2">
+                      {isKu ? 'لیستی تەواوی لۆکەیشنە چالاککراوەکانی ئەم مۆدێلە:' : 'All Active Locations for this Model:'}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {editForm.allowed_zones.map((loc) => (
+                        <span
+                          key={loc}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-slate-900 text-blue-300 border border-blue-500/30"
+                        >
+                          <span>{loc}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLocation(loc)}
+                            title="Remove location"
+                            className="text-slate-400 hover:text-red-400 transition"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Hardware Identity & Specs */}
+                <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                  <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-cyan-400" />
+                    <span>{isKu ? 'زانیاری ئەندازیاری و کەتەلۆگ' : 'Engineering & Hardware Profile'}</span>
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {t.brand} *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.brand}
+                        onChange={(e) => setEditForm({ ...editForm, brand: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {t.model} *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.model}
+                        onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {t.category} *
+                      </label>
+                      <select
+                        value={editForm.category_id}
+                        onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                        required
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {isKu ? c.name_ku : c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {isKu ? 'کۆی ژمارەی داواکراو لە BOQ (Target Qty)' : 'Target BOQ Quantity *'}
+                      </label>
+                      <input
+                        type="number"
+                        min={provisionedCount}
+                        value={editForm.total_qty}
+                        onChange={(e) => setEditForm({ ...editForm, total_qty: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {isKu ? 'نرخی تاک بە دۆلاری ئەمریکی ($)' : 'Unit Cost (USD) *'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editForm.unit_cost}
+                        onChange={(e) => setEditForm({ ...editForm, unit_cost: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* URLs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {isKu ? 'بەستەری وێنەی ئامێر (Image URL)' : 'Product Photo Image URL'}
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.product_image_url}
+                        onChange={(e) => setEditForm({ ...editForm, product_image_url: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        {isKu ? 'بەستەری داتاشیت و مانیواڵی فەرمی (PDF URL)' : 'Official Datasheet / PDF Manual URL'}
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.manual_pdf_url}
+                        onChange={(e) => setEditForm({ ...editForm, manual_pdf_url: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Rack Mount Configuration */}
+                  <div className="flex flex-wrap items-center gap-6 p-3.5 bg-slate-900 rounded-xl border border-slate-800">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.is_rack_mounted}
+                        onChange={(e) => setEditForm({ ...editForm, is_rack_mounted: e.target.checked })}
+                        className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-0 bg-slate-950"
+                      />
+                      <span className="text-xs font-semibold text-white">
+                        {isKu ? 'لەناو ڕاکی سێرڤەر دادەنرێت (19" Server Rack Mounted)' : '19" Server Rack Mounted'}
+                      </span>
+                    </label>
+
+                    {editForm.is_rack_mounted && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">
+                          {isKu ? 'بەرزی ناو ڕاک:' : 'Rack Unit Height:'}
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={editForm.rack_unit_size || 1}
+                          onChange={(e) => setEditForm({ ...editForm, rack_unit_size: e.target.value })}
+                          className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono text-amber-300"
+                        />
+                        <span className="text-xs font-mono text-amber-300">U</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Custom Specs JSON */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      {isKu ? 'تایبەتمەندییە وردە ئەندازیارییەکان (JSON Specs)' : 'Custom Engineering JSON Specs'}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editForm.custom_specs_text}
+                      onChange={(e) => setEditForm({ ...editForm, custom_specs_text: e.target.value })}
+                      placeholder='{"poe_standard": "802.3at", "power_watts": 30}'
+                      className="w-full bg-slate-950 font-mono text-xs text-cyan-300 border border-slate-700 rounded-xl p-3 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Submit Action Bar */}
+                <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('details')}
+                    className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white transition"
+                  >
+                    {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white shadow-xl shadow-emerald-950/40 transition active:scale-95 disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>
+                      {isSavingEdit
+                        ? (isKu ? 'خەزن دەکرێت...' : 'Saving Changes...')
+                        : (isKu ? 'پاشەکەوتکردنی هەموو گۆڕانکارییەکان' : 'Save All BOQ Changes')}
+                    </span>
+                  </button>
+                </div>
+              </form>
             )}
           </div>
 

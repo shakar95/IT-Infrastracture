@@ -48,6 +48,25 @@ export default function BOQManager({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [bulkModalModel, setBulkModalModel] = useState(null);
   const [inspectingModel, setInspectingModel] = useState(null);
+  const [modalInitialTab, setModalInitialTab] = useState('provision');
+
+  const handleOpenEdit = (model) => {
+    setInspectingModel(model);
+    setModalInitialTab('edit');
+  };
+
+  const handleOpenProvision = (model) => {
+    setInspectingModel(model);
+    setModalInitialTab('provision');
+  };
+
+  const handleUpdateModelAndInspect = async (id, updates) => {
+    const updated = await onUpdateModel(id, updates);
+    if (inspectingModel && inspectingModel.id === id) {
+      setInspectingModel((prev) => ({ ...prev, ...updates, ...updated }));
+    }
+    return updated;
+  };
 
   // Form State for New Model (English technical fields)
   const [formData, setFormData] = useState({
@@ -230,7 +249,7 @@ export default function BOQManager({
           return (
             <div
               key={m.id}
-              onClick={() => setInspectingModel(m)}
+              onClick={() => handleOpenProvision(m)}
               className="bg-slate-900/70 border border-slate-800/90 rounded-2xl overflow-hidden hover:border-blue-500/60 hover:shadow-2xl hover:shadow-blue-500/10 transition-all flex flex-col group cursor-pointer"
             >
               {/* Product Image & Badges */}
@@ -294,18 +313,32 @@ export default function BOQManager({
                       {m.model}
                     </h3>
                   </div>
-                  <p className="mt-1 text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                    {m.description || 'Enterprise ELV hardware component for Sitak Villa infrastructure.'}
-                  </p>
+
+                  {/* Editable Description Container */}
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEdit(m);
+                    }}
+                    className="group/desc cursor-pointer mt-1 rounded-lg p-1 -m-1 hover:bg-slate-800/40 transition"
+                    title={isKu ? 'کلیک بکە بۆ دەستکاریکردنی ئەم دیسکریپشنە' : 'Click to edit this description'}
+                  >
+                    <p className="text-xs text-slate-400 group-hover/desc:text-amber-300 line-clamp-2 leading-relaxed transition flex items-start justify-between gap-1">
+                      <span>{m.description || 'Enterprise ELV hardware component for Sitak Villa infrastructure.'}</span>
+                      <span className="p-0.5 rounded text-slate-500 group-hover/desc:text-amber-400 group-hover/desc:bg-amber-400/10 shrink-0">
+                        <Edit2 className="w-3 h-3" />
+                      </span>
+                    </p>
+                  </div>
 
                   {/* Allowed Zones */}
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {m.allowed_zones?.map((z) => (
                       <span
                         key={z}
-                        className="px-2 py-0.5 text-[10px] rounded-md bg-slate-800 text-slate-300 border border-slate-700"
+                        className="px-2 py-0.5 text-[10px] rounded-md bg-slate-800 text-slate-300 border border-slate-700 font-mono"
                       >
-                        {z === 'indoor' ? t.zoneIndoor : z === 'outdoor' ? t.zoneOutdoor : z === 'rack' ? t.zoneRack : t.zoneSafeRoom}
+                        {z === 'indoor' ? t.zoneIndoor : z === 'outdoor' ? t.zoneOutdoor : z === 'rack' ? t.zoneRack : z === 'safe_room' ? t.zoneSafeRoom : z}
                       </span>
                     ))}
                   </div>
@@ -333,7 +366,19 @@ export default function BOQManager({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setInspectingModel(m);
+                        handleOpenEdit(m);
+                      }}
+                      title={isKu ? 'دەستکاریکردنی وەسف، لۆکەیشن و مۆدێل' : 'Edit description, locations & specs'}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30 transition shadow active:scale-95"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>{isKu ? 'دەستکاری' : 'Edit'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenProvision(m);
                       }}
                       title="Open and provision device with barcode & location"
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-500 transition shadow active:scale-95"
@@ -636,15 +681,18 @@ export default function BOQManager({
         </div>
       )}
 
-      {/* BOQ Model Inspection, Quantity Adjustment & Barcode Provisioning Modal */}
+      {/* BOQ Model Inspection, Full Editing & Barcode Provisioning Modal */}
       <BoqModelDetailsModal
         model={inspectingModel}
         category={categories.find((c) => c.id === inspectingModel?.category_id)}
+        categories={categories}
         devices={devices}
         floorPlans={floorPlans}
         isOpen={Boolean(inspectingModel)}
+        initialTab={modalInitialTab}
         onClose={() => setInspectingModel(null)}
-        onUpdateTotalQty={onUpdateModel}
+        onUpdateModel={handleUpdateModelAndInspect}
+        onUpdateTotalQty={handleUpdateModelAndInspect}
         onCreateDevice={onCreateDevice}
         onUpdateStatus={onUpdateStatus}
         onNavigateToMap={onNavigateToMap}
