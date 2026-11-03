@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
+import QuickAddCategoryModal from './QuickAddCategoryModal';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -33,6 +34,7 @@ export default function DeviceProvisioning({
   onDeleteDevice,
   onOpenTroubleshoot,
   onNavigateToMap,
+  onCreateCategory,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
@@ -46,23 +48,27 @@ export default function DeviceProvisioning({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState(null);
   const [inspectingDevice, setInspectingDevice] = useState(null);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [customLocations, setCustomLocations] = useState(['indoor', 'outdoor', 'rack', 'safe_room']);
+  const [newLocationInput, setNewLocationInput] = useState('');
+  const [showAddLocationInput, setShowAddLocationInput] = useState(false);
 
-  // Form State (All fields in English as requested)
+  // Form State (All fields start empty, placeholders will show guidance)
   const [deviceForm, setDeviceForm] = useState({
     boq_model_id: boqModels[0]?.id || '',
     custom_label_id: '',
     serial_number: '',
     mac_address: '',
     ip_address: '',
-    subnet_mask: '255.255.255.0',
-    gateway: '192.168.10.1',
-    vlan_id: 10,
+    subnet_mask: '',
+    gateway: '',
+    vlan_id: '',
     switch_name: '',
     switch_port: '',
     rack_name: '',
     rack_unit: '',
     placement_zone: 'indoor',
-    floor_plan_id: '',
+    floor_plan_id: floorPlans[0]?.id || '',
     installation_status: 'Pending',
     config_backup_url: '',
     notes: '',
@@ -91,18 +97,18 @@ export default function DeviceProvisioning({
     const firstModel = boqModels[0];
     setDeviceForm({
       boq_model_id: firstModel?.id || '',
-      custom_label_id: `DEV-${Math.floor(100 + Math.random() * 900)}`,
-      serial_number: `SN-${Date.now().toString().slice(-6)}`,
+      custom_label_id: '',
+      serial_number: '',
       mac_address: '',
       ip_address: '',
-      subnet_mask: '255.255.255.0',
-      gateway: '192.168.10.1',
-      vlan_id: 10,
-      switch_name: 'SW-CORE-RACK-48P',
-      switch_port: 'Port 10',
-      rack_name: firstModel?.is_rack_mounted ? 'Main 42U Rack A' : '',
-      rack_unit: firstModel?.is_rack_mounted ? 'U20' : '',
-      placement_zone: firstModel?.is_rack_mounted ? 'rack' : firstModel?.allowed_zones[0] || 'indoor',
+      subnet_mask: '',
+      gateway: '',
+      vlan_id: '',
+      switch_name: '',
+      switch_port: '',
+      rack_name: '',
+      rack_unit: '',
+      placement_zone: firstModel?.is_rack_mounted ? 'rack' : firstModel?.allowed_zones?.[0] || 'indoor',
       floor_plan_id: floorPlans[0]?.id || '',
       installation_status: 'Pending',
       config_backup_url: '',
@@ -115,13 +121,13 @@ export default function DeviceProvisioning({
   const handleOpenEdit = (dev) => {
     setDeviceForm({
       boq_model_id: dev.boq_model_id,
-      custom_label_id: dev.custom_label_id,
+      custom_label_id: dev.custom_label_id || '',
       serial_number: dev.serial_number || '',
       mac_address: dev.mac_address || '',
       ip_address: dev.ip_address || '',
-      subnet_mask: dev.subnet_mask || '255.255.255.0',
-      gateway: dev.gateway || '192.168.10.1',
-      vlan_id: dev.vlan_id || 10,
+      subnet_mask: dev.subnet_mask || '',
+      gateway: dev.gateway || '',
+      vlan_id: dev.vlan_id || '',
       switch_name: dev.switch_name || '',
       switch_port: dev.switch_port || '',
       rack_name: dev.rack_name || '',
@@ -138,10 +144,33 @@ export default function DeviceProvisioning({
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    const selectedModel = boqModels.find((m) => m.id === deviceForm.boq_model_id);
+    const cleanPrefix = selectedModel
+      ? `${selectedModel.brand.substring(0, 3).toUpperCase()}-${selectedModel.model.replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase()}`
+      : 'DEV';
+
+    const payload = {
+      ...deviceForm,
+      custom_label_id: deviceForm.custom_label_id.trim()
+        ? deviceForm.custom_label_id.trim().toUpperCase()
+        : `${cleanPrefix}-${Math.floor(100 + Math.random() * 900)}`,
+      serial_number: deviceForm.serial_number.trim() || null,
+      mac_address: deviceForm.mac_address.trim() || null,
+      ip_address: deviceForm.ip_address.trim() || null,
+      subnet_mask: deviceForm.subnet_mask.trim() || '255.255.255.0',
+      gateway: deviceForm.gateway.trim() || '192.168.10.1',
+      vlan_id: deviceForm.vlan_id ? Number(deviceForm.vlan_id) : 10,
+      switch_name: deviceForm.switch_name.trim() || null,
+      switch_port: deviceForm.switch_port.trim() || null,
+      rack_name: deviceForm.placement_zone === 'rack' ? (deviceForm.rack_name.trim() || 'Main 42U Rack A') : null,
+      rack_unit: deviceForm.placement_zone === 'rack' ? (deviceForm.rack_unit.trim() || 'U1') : null,
+      floor_plan_id: deviceForm.floor_plan_id || null,
+    };
+
     if (editingDevice) {
-      await onUpdateDevice(editingDevice.id, deviceForm);
+      await onUpdateDevice(editingDevice.id, payload);
     } else {
-      await onCreateDevice(deviceForm);
+      await onCreateDevice(payload);
     }
     setIsModalOpen(false);
   };
@@ -212,18 +241,28 @@ export default function DeviceProvisioning({
           <option value="safe_room">{t.zoneSafeRoom}</option>
         </select>
 
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500"
-        >
-          <option value="all">{t.allCategories}</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {isKu ? c.name_ku : c.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+          >
+            <option value="all">{t.allCategories}</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {isKu ? c.name_ku : c.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setIsCategoryModalOpen(true)}
+            title={isKu ? 'زیادکردنی بەشی نوێ' : 'Add Category'}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600/30 text-blue-400 hover:text-white border border-slate-700 transition shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Devices Data Table */}
@@ -390,7 +429,7 @@ export default function DeviceProvisioning({
             <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.selectBoqModel} *</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.selectBoqModel}</label>
                   <select
                     value={deviceForm.boq_model_id}
                     onChange={(e) => {
@@ -403,7 +442,6 @@ export default function DeviceProvisioning({
                       });
                     }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
                   >
                     {boqModels.map((m) => (
                       <option key={m.id} value={m.id}>
@@ -414,14 +452,13 @@ export default function DeviceProvisioning({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.customLabel} *</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.customLabel}</label>
                   <input
                     type="text"
                     value={deviceForm.custom_label_id}
                     onChange={(e) => setDeviceForm({ ...deviceForm, custom_label_id: e.target.value })}
                     placeholder="e.g. AP-GF-01, CCTV-EXT-02"
                     className="w-full font-mono bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
                   />
                 </div>
               </div>
@@ -462,7 +499,7 @@ export default function DeviceProvisioning({
                       type="text"
                       value={deviceForm.ip_address}
                       onChange={(e) => setDeviceForm({ ...deviceForm, ip_address: e.target.value })}
-                      placeholder="192.168.30.15"
+                      placeholder="e.g. 192.168.30.15"
                       className="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-cyan-300"
                     />
                   </div>
@@ -472,6 +509,7 @@ export default function DeviceProvisioning({
                       type="number"
                       value={deviceForm.vlan_id}
                       onChange={(e) => setDeviceForm({ ...deviceForm, vlan_id: e.target.value })}
+                      placeholder="10"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
                     />
                   </div>
@@ -481,6 +519,7 @@ export default function DeviceProvisioning({
                       type="text"
                       value={deviceForm.gateway}
                       onChange={(e) => setDeviceForm({ ...deviceForm, gateway: e.target.value })}
+                      placeholder="192.168.10.1"
                       className="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
                     />
                   </div>
@@ -493,11 +532,17 @@ export default function DeviceProvisioning({
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.switchName}</label>
                   <input
                     type="text"
+                    list="switches-list"
                     value={deviceForm.switch_name}
                     onChange={(e) => setDeviceForm({ ...deviceForm, switch_name: e.target.value })}
                     placeholder="e.g. SW-CORE-RACK-48P"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
                   />
+                  <datalist id="switches-list">
+                    <option value="SW-CORE-RACK-48P" />
+                    <option value="SW-EDGE-POOL-24P" />
+                    <option value="SW-CCTV-SEC-24P" />
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.switchPortNumber}</label>
@@ -505,27 +550,105 @@ export default function DeviceProvisioning({
                     type="text"
                     value={deviceForm.switch_port}
                     onChange={(e) => setDeviceForm({ ...deviceForm, switch_port: e.target.value })}
-                    placeholder="e.g. Port 14"
+                    placeholder="e.g. Port 14 or Gi1/0/14"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
                   />
                 </div>
               </div>
 
-              {/* Rack Unit & Placement Zone */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Site Plan / Floor Plan & Placement Zone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.placementZoneLabel}</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-300">{t.placementZoneLabel}</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddLocationInput(!showAddLocationInput)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+                    >
+                      {showAddLocationInput ? (isKu ? 'داخستن' : 'Close') : (isKu ? '+ لۆکەیشنی نوێ' : '+ New Location')}
+                    </button>
+                  </div>
+                  {showAddLocationInput ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newLocationInput}
+                        onChange={(e) => setNewLocationInput(e.target.value)}
+                        placeholder={isKu ? 'وەک: حەوشە، سەربان، دەروازە' : 'e.g. Garden, Terrace, Roof'}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = newLocationInput.trim().toLowerCase().replace(/\s+/g, '_');
+                          if (val) {
+                            if (!customLocations.includes(val)) {
+                              setCustomLocations([...customLocations, val]);
+                            }
+                            setDeviceForm({ ...deviceForm, placement_zone: val });
+                            setNewLocationInput('');
+                            setShowAddLocationInput(false);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0"
+                      >
+                        {isKu ? 'زیادکە' : 'Add'}
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={deviceForm.placement_zone}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setShowAddLocationInput(true);
+                        } else {
+                          setDeviceForm({ ...deviceForm, placement_zone: e.target.value });
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
+                    >
+                      {customLocations.map((loc) => (
+                        <option key={loc} value={loc}>
+                          {loc === 'indoor'
+                            ? t.zoneIndoor
+                            : loc === 'outdoor'
+                            ? t.zoneOutdoor
+                            : loc === 'rack'
+                            ? t.zoneRack
+                            : loc === 'safe_room'
+                            ? t.zoneSafeRoom
+                            : loc}
+                        </option>
+                      ))}
+                      <option value="__add_new__" className="text-blue-400 font-semibold">
+                        {isKu ? '+ زیادکردنی شوێنی نوێ...' : '+ Add Custom Location...'}
+                      </option>
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    {isKu ? 'سایت پلان / نەخشەی شوێن' : 'Site Plan / Blueprint'}
+                  </label>
                   <select
-                    value={deviceForm.placement_zone}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, placement_zone: e.target.value })}
+                    value={deviceForm.floor_plan_id || ''}
+                    onChange={(e) => setDeviceForm({ ...deviceForm, floor_plan_id: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
                   >
-                    <option value="indoor">{t.zoneIndoor}</option>
-                    <option value="outdoor">{t.zoneOutdoor}</option>
-                    <option value="rack">{t.zoneRack}</option>
-                    <option value="safe_room">{t.zoneSafeRoom}</option>
+                    <option value="">{isKu ? 'دیاری نەکراوە (دانانی لە دوایدا)' : 'None (Unassigned)'}</option>
+                    {floorPlans.map((fp) => (
+                      <option key={fp.id} value={fp.id}>
+                        {isKu ? fp.name_ku : fp.name} ({fp.zone_type})
+                      </option>
+                    ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Rack Unit & Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.rackUnitPos}</label>
                   <input
@@ -599,6 +722,19 @@ export default function DeviceProvisioning({
         }}
         onOpenTroubleshoot={onOpenTroubleshoot}
         onNavigateToMap={onNavigateToMap}
+        lang={lang}
+      />
+
+      {/* Quick Add Category Modal */}
+      <QuickAddCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        onCreateCategory={onCreateCategory}
+        onCategoryCreated={(newCat) => {
+          if (newCat?.id) {
+            setCategoryFilter(newCat.id);
+          }
+        }}
         lang={lang}
       />
     </div>

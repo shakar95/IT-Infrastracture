@@ -143,6 +143,34 @@ export const api = {
   async getMapDevices(mapId) {
     return handleResponse(await fetch(`${API_BASE}/maps/${mapId}/devices`));
   },
+  async createFloorPlan(planData) {
+    return handleResponse(await fetch(`${API_BASE}/maps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planData),
+    }));
+  },
+  async uploadFloorPlanImage(fileOrBase64) {
+    if (typeof fileOrBase64 === 'string') {
+      return handleResponse(await fetch(`${API_BASE}/maps/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: fileOrBase64 }),
+      }));
+    } else {
+      const formData = new FormData();
+      formData.append('image', fileOrBase64);
+      return handleResponse(await fetch(`${API_BASE}/maps/upload`, {
+        method: 'POST',
+        body: formData,
+      }));
+    }
+  },
+  async deleteFloorPlan(id) {
+    return handleResponse(await fetch(`${API_BASE}/maps/${id}`, {
+      method: 'DELETE',
+    }));
+  },
 
   // AI Scanner & Troubleshooting
   async ocrScanSticker(imageBase64, mimeType = 'image/jpeg') {

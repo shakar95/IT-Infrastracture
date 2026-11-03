@@ -205,6 +205,28 @@ export default function App() {
     }
   };
 
+  // Floor Plan Actions
+  const handleCreateFloorPlan = async (planData) => {
+    try {
+      const created = await api.createFloorPlan(planData);
+      setFloorPlans((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      alert(err.message || 'Failed to create floor plan');
+      throw err;
+    }
+  };
+
+  const handleDeleteFloorPlan = async (id) => {
+    if (!window.confirm('Delete this floor plan / site plan?')) return;
+    try {
+      await api.deleteFloorPlan(id);
+      setFloorPlans((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(err.message || 'Failed to delete floor plan');
+    }
+  };
+
   // Cross-component workflow: Open Troubleshooter with device context
   const handleOpenTroubleshoot = (device) => {
     setTroubleshootDevice(device);
@@ -266,6 +288,8 @@ export default function App() {
                 onCreateDevice={handleCreateDevice}
                 onUpdateStatus={handleUpdateStatus}
                 onNavigateToMap={handleNavigateToMap}
+                onCreateCategory={handleCreateCategory}
+                onCreateFloorPlan={handleCreateFloorPlan}
                 lang={lang}
               />
             )}
@@ -282,6 +306,7 @@ export default function App() {
                 onDeleteDevice={handleDeleteDevice}
                 onOpenTroubleshoot={handleOpenTroubleshoot}
                 onNavigateToMap={handleNavigateToMap}
+                onCreateCategory={handleCreateCategory}
                 lang={lang}
               />
             )}
@@ -294,6 +319,8 @@ export default function App() {
                 categories={categories}
                 onUpdatePosition={handleUpdatePosition}
                 onOpenTroubleshoot={handleOpenTroubleshoot}
+                onCreateFloorPlan={handleCreateFloorPlan}
+                onDeleteFloorPlan={handleDeleteFloorPlan}
                 initialSelectedPlanId={selectedMapPlanId}
                 initialSelectedDevice={selectedMapDevice}
                 lang={lang}

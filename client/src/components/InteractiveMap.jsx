@@ -18,9 +18,11 @@ import {
   Activity,
   X,
   Plus,
+  Trash2,
   AlertTriangle,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
+import AddFloorPlanModal from './AddFloorPlanModal';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -29,6 +31,8 @@ export default function InteractiveMap({
   categories = [],
   onUpdatePosition,
   onOpenTroubleshoot,
+  onCreateFloorPlan,
+  onDeleteFloorPlan,
   initialSelectedPlanId = null,
   initialSelectedDevice = null,
   lang = 'en',
@@ -41,6 +45,7 @@ export default function InteractiveMap({
   const [zoomLevel, setZoomLevel] = useState(1);
   const [pingStatus, setPingStatus] = useState(null); // null | 'testing' | { ok: true, latency: 12 }
   const [deviceToPlace, setDeviceToPlace] = useState(null);
+  const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
 
   useEffect(() => {
     if (initialSelectedPlanId) {
@@ -113,31 +118,41 @@ export default function InteractiveMap({
           <p className="text-xs sm:text-sm text-slate-400">{t.mapSubtitle}</p>
         </div>
 
-        {/* Floor Plan Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
-          {floorPlans.map((fp) => {
-            const isActive = fp.id === activePlan?.id;
-            return (
-              <button
-                key={fp.id}
-                onClick={() => {
-                  setSelectedPlanId(fp.id);
-                  setSelectedDevice(null);
-                  setDeviceToPlace(null);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <span>{isKu ? fp.name_ku : fp.name}</span>
-                <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-950/60 font-mono">
-                  {fp.zone_type}
-                </span>
-              </button>
-            );
-          })}
+        {/* Floor Plan Tabs & Add Plan Button */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+            {floorPlans.map((fp) => {
+              const isActive = fp.id === activePlan?.id;
+              return (
+                <button
+                  key={fp.id}
+                  onClick={() => {
+                    setSelectedPlanId(fp.id);
+                    setSelectedDevice(null);
+                    setDeviceToPlace(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <span>{isKu ? fp.name_ku : fp.name}</span>
+                  <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-slate-950/60 font-mono">
+                    {fp.zone_type}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setIsAddPlanModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isKu ? '+ زیادکردنی سایت پلان / نەخشە' : '+ Add Site Plan'}</span>
+          </button>
         </div>
       </div>
 
@@ -447,6 +462,19 @@ export default function InteractiveMap({
           )}
         </div>
       </div>
+
+      {/* Add Site Plan / Floor Plan Modal */}
+      <AddFloorPlanModal
+        isOpen={isAddPlanModalOpen}
+        onClose={() => setIsAddPlanModalOpen(false)}
+        onCreateFloorPlan={onCreateFloorPlan}
+        onFloorPlanCreated={(newPlan) => {
+          if (newPlan?.id) {
+            setSelectedPlanId(newPlan.id);
+          }
+        }}
+        lang={lang}
+      />
     </div>
   );
 }

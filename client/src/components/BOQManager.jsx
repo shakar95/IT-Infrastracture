@@ -18,9 +18,11 @@ import {
   Maximize2,
   Camera,
   Upload,
+  MapPin,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import BoqModelDetailsModal from './BoqModelDetailsModal';
+import QuickAddCategoryModal from './QuickAddCategoryModal';
 
 const compressImage = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
   return new Promise((resolve, reject) => {
@@ -68,6 +70,8 @@ export default function BOQManager({
   onCreateDevice,
   onUpdateStatus,
   onNavigateToMap,
+  onCreateCategory,
+  onCreateFloorPlan,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
@@ -80,6 +84,7 @@ export default function BOQManager({
   const activeCategoryObj = categories.find((c) => c.id === activeCategory);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [bulkModalModel, setBulkModalModel] = useState(null);
   const [inspectingModel, setInspectingModel] = useState(null);
   const [modalInitialTab, setModalInitialTab] = useState('provision');
@@ -188,13 +193,24 @@ export default function BOQManager({
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{t.boqTitle}</h2>
           <p className="text-xs sm:text-sm text-slate-400">{t.boqSubtitle}</p>
         </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          {t.btnAddModel}
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => onNavigateToMap && onNavigateToMap()}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow transition active:scale-95 shrink-0"
+          >
+            <MapPin className="w-4 h-4 text-blue-400" />
+            <span>{isKu ? 'سایت پلان و نەخشەکان' : 'Site Plans & Maps'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t.btnAddModel}</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -210,19 +226,29 @@ export default function BOQManager({
           />
         </div>
 
-        {/* Category Pill / Select */}
-        <select
-          value={activeCategory}
-          onChange={(e) => setCategory(e.target.value)}
-          className="w-full md:w-64 bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500 transition"
-        >
-          <option value="all">{t.allCategories} ({boqModels.length})</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {isKu ? c.name_ku : c.name}
-            </option>
-          ))}
-        </select>
+        {/* Category Pill / Select with Add Category Button */}
+        <div className="flex items-center gap-1.5 w-full md:w-auto">
+          <select
+            value={activeCategory}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full md:w-64 bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500 transition"
+          >
+            <option value="all">{t.allCategories} ({boqModels.length})</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {isKu ? c.name_ku : c.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setIsCategoryModalOpen(true)}
+            title={isKu ? 'زیادکردنی بەشی نوێ' : 'Add Category'}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600/30 text-blue-400 hover:text-white border border-slate-700 transition shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Active Category Filter Tag Banner (When navigated from Dashboard or selected) */}
@@ -467,14 +493,23 @@ export default function BOQManager({
             <form onSubmit={handleCreateSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    {t.category} *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-300">
+                      {t.category}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{isKu ? '+ بەشی نوێ' : '+ New Category'}</span>
+                    </button>
+                  </div>
                   <select
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
                   >
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -754,6 +789,21 @@ export default function BOQManager({
         onCreateDevice={onCreateDevice}
         onUpdateStatus={onUpdateStatus}
         onNavigateToMap={onNavigateToMap}
+        onCreateCategory={onCreateCategory}
+        lang={lang}
+      />
+
+      {/* Quick Add Category Modal */}
+      <QuickAddCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        onCreateCategory={onCreateCategory}
+        onCategoryCreated={(newCat) => {
+          if (newCat?.id) {
+            setCategory(newCat.id);
+            setFormData((prev) => ({ ...prev, category_id: newCat.id }));
+          }
+        }}
         lang={lang}
       />
     </div>

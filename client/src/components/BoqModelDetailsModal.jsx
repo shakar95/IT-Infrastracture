@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import { api } from '../services/api';
+import QuickAddCategoryModal from './QuickAddCategoryModal';
 
 // Helper function to compress and resize image files before saving
 const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -85,6 +86,7 @@ export default function BoqModelDetailsModal({
   onCreateDevice,
   onUpdateStatus,
   onNavigateToMap,
+  onCreateCategory,
   lang = 'en',
 }) {
   if (!isOpen || !model) return null;
@@ -207,19 +209,21 @@ export default function BoqModelDetailsModal({
   const cleanPrefix = `${model.brand.substring(0, 3).toUpperCase()}-${model.model.replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase()}`;
   const nextNum = String(provisionedCount + 1).padStart(2, '0');
 
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
   const [form, setForm] = useState({
-    custom_label_id: `${cleanPrefix}-${nextNum}`,
-    serial_number: `SN-${Date.now().toString().slice(-6)}`,
-    barcode: `BC-${Date.now().toString().slice(-8)}`,
-    mac_address: `00:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`,
+    custom_label_id: '',
+    serial_number: '',
+    barcode: '',
+    mac_address: '',
     ip_address: '',
-    subnet_mask: '255.255.255.0',
-    gateway: '192.168.10.1',
-    vlan_id: 10,
-    switch_name: model.is_rack_mounted ? 'SW-CORE-RACK-48P' : 'SW-EDGE-GF-24P',
-    switch_port: `Port ${Math.floor(1 + Math.random() * 24)}`,
-    rack_name: model.is_rack_mounted ? 'Main 42U Rack A' : '',
-    rack_unit: model.is_rack_mounted ? `U${Math.floor(10 + Math.random() * 25)}` : '',
+    subnet_mask: '',
+    gateway: '',
+    vlan_id: '',
+    switch_name: '',
+    switch_port: '',
+    rack_name: '',
+    rack_unit: '',
     placement_zone: defaultZone,
     floor_plan_id: defaultFloor,
     installation_status: 'Pending',
@@ -383,38 +387,53 @@ export default function BoqModelDetailsModal({
     e.preventDefault();
     try {
       setIsSubmitting(true);
+      const finalLabel = form.custom_label_id.trim()
+        ? form.custom_label_id.trim().toUpperCase()
+        : `${cleanPrefix}-${nextNum}`;
+      const finalSerial = form.serial_number.trim() || form.barcode.trim() || `SN-${Date.now().toString().slice(-6)}`;
+
       const payload = {
         boq_model_id: model.id,
-        custom_label_id: form.custom_label_id.trim().toUpperCase(),
-        serial_number: form.serial_number.trim() || form.barcode.trim(),
+        custom_label_id: finalLabel,
+        serial_number: finalSerial,
         mac_address: form.mac_address.trim() || null,
         ip_address: form.ip_address.trim() || null,
         subnet_mask: form.subnet_mask.trim() || '255.255.255.0',
         gateway: form.gateway.trim() || '192.168.10.1',
-        vlan_id: Number(form.vlan_id) || 10,
+        vlan_id: form.vlan_id ? Number(form.vlan_id) : 10,
         switch_name: form.switch_name.trim() || null,
         switch_port: form.switch_port.trim() || null,
         rack_name: form.placement_zone === 'rack' ? (form.rack_name.trim() || 'Main 42U Rack A') : null,
         rack_unit: form.placement_zone === 'rack' ? (form.rack_unit.trim() || 'U1') : null,
-        placement_zone: form.placement_zone,
+        placement_zone: form.placement_zone || defaultZone,
         floor_plan_id: form.floor_plan_id || null,
         installation_status: form.installation_status || 'Pending',
-        notes: form.notes.trim() ? `[Barcode: ${form.barcode}] ${form.notes.trim()}` : `[Barcode: ${form.barcode}]`,
+        notes: form.notes.trim() || (form.barcode ? `[Barcode: ${form.barcode}]` : ''),
       };
 
       if (onCreateDevice) {
         await onCreateDevice(payload);
       }
 
-      // Auto-increment label for next item
-      const nextSequence = String(modelDevices.length + 2).padStart(2, '0');
-      setForm((prev) => ({
-        ...prev,
-        custom_label_id: `${cleanPrefix}-${nextSequence}`,
-        serial_number: `SN-${Date.now().toString().slice(-6)}`,
-        barcode: `BC-${Date.now().toString().slice(-8)}`,
+      // Reset form to clean empty fields for next device
+      setForm({
+        custom_label_id: '',
+        serial_number: '',
+        barcode: '',
+        mac_address: '',
         ip_address: '',
-      }));
+        subnet_mask: '',
+        gateway: '',
+        vlan_id: '',
+        switch_name: '',
+        switch_port: '',
+        rack_name: '',
+        rack_unit: '',
+        placement_zone: defaultZone,
+        floor_plan_id: defaultFloor,
+        installation_status: 'Pending',
+        notes: '',
+      });
 
       // Switch to instances tab to show the newly added device
       setActiveTab('instances');
@@ -618,14 +637,13 @@ export default function BoqModelDetailsModal({
                   {/* Custom Label ID */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Custom Label ID <span className="text-red-400">*</span>
+                      Custom Label ID
                     </label>
                     <input
                       type="text"
-                      required
                       value={form.custom_label_id}
                       onChange={(e) => setForm({ ...form, custom_label_id: e.target.value })}
-                      placeholder="e.g. AP-GF-01 or TV-MUX-01"
+                      placeholder={`e.g. ${cleanPrefix}-${nextNum}`}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-blue-500"
                     />
                   </div>
@@ -633,15 +651,14 @@ export default function BoqModelDetailsModal({
                   {/* Barcode & Serial */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Barcode / Serial Sticker <span className="text-red-400">*</span>
+                      Barcode / Serial Sticker
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        required
                         value={form.barcode}
                         onChange={(e) => setForm({ ...form, barcode: e.target.value, serial_number: e.target.value })}
-                        placeholder="Scan or input barcode..."
+                        placeholder="Scan or input barcode / serial..."
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 pr-10 focus:outline-none focus:border-blue-500"
                       />
                       <Barcode className="w-4 h-4 text-slate-500 absolute right-3 top-2.5" />
@@ -655,7 +672,7 @@ export default function BoqModelDetailsModal({
                       type="text"
                       value={form.mac_address}
                       onChange={(e) => setForm({ ...form, mac_address: e.target.value })}
-                      placeholder="00:11:22:33:44:55"
+                      placeholder="e.g. 74:83:C2:10:4E:55"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-blue-500"
                     />
                   </div>
@@ -675,17 +692,13 @@ export default function BoqModelDetailsModal({
                   {/* VLAN ID */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">VLAN ID</label>
-                    <select
+                    <input
+                      type="number"
                       value={form.vlan_id}
-                      onChange={(e) => setForm({ ...form, vlan_id: Number(e.target.value) })}
+                      onChange={(e) => setForm({ ...form, vlan_id: e.target.value })}
+                      placeholder="10"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
-                    >
-                      <option value={10}>VLAN 10 - Core & Management</option>
-                      <option value={20}>VLAN 20 - IP CCTV & Surveillance</option>
-                      <option value={30}>VLAN 30 - Wi-Fi Infrastructure</option>
-                      <option value={40}>VLAN 40 - Automation & AV Multiroom</option>
-                      <option value={50}>VLAN 50 - Guest Network</option>
-                    </select>
+                    />
                   </div>
 
                   {/* Switch & Port */}
@@ -696,7 +709,7 @@ export default function BoqModelDetailsModal({
                         type="text"
                         value={form.switch_name}
                         onChange={(e) => setForm({ ...form, switch_name: e.target.value })}
-                        placeholder="SW-CORE-RACK-48P"
+                        placeholder="e.g. SW-CORE-RACK-48P"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
                       />
                     </div>
@@ -706,7 +719,7 @@ export default function BoqModelDetailsModal({
                         type="text"
                         value={form.switch_port}
                         onChange={(e) => setForm({ ...form, switch_port: e.target.value })}
-                        placeholder="Port 12"
+                        placeholder="e.g. Port 12"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-blue-500"
                       />
                     </div>
@@ -715,13 +728,14 @@ export default function BoqModelDetailsModal({
                   {/* Location 1: Assigned Floor Plan */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Physical Floor Plan <span className="text-red-400">*</span>
+                      {isKu ? 'سایت پلان / نەخشەی شوێن' : 'Physical Floor Plan'}
                     </label>
                     <select
                       value={form.floor_plan_id}
                       onChange={(e) => setForm({ ...form, floor_plan_id: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
                     >
+                      <option value="">{isKu ? 'دیاری نەکراوە (دانانی لە دوایدا)' : 'None (Unassigned)'}</option>
                       {floorPlans.map((fp) => (
                         <option key={fp.id} value={fp.id}>
                           {isKu ? fp.name_ku : fp.name} ({fp.zone_type})
@@ -1311,14 +1325,23 @@ export default function BoqModelDetailsModal({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        {t.category} *
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-300">
+                          {t.category}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsCategoryModalOpen(true)}
+                          className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>{isKu ? '+ زیادکردنی بەش' : '+ New Category'}</span>
+                        </button>
+                      </div>
                       <select
                         value={editForm.category_id}
                         onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                        required
                       >
                         {categories.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -1699,6 +1722,19 @@ export default function BoqModelDetailsModal({
           </div>
         </div>
       )}
+
+      {/* Quick Add Category Modal */}
+      <QuickAddCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        onCreateCategory={onCreateCategory}
+        onCategoryCreated={(newCat) => {
+          if (newCat?.id) {
+            setEditForm((prev) => ({ ...prev, category_id: newCat.id }));
+          }
+        }}
+        lang={lang}
+      />
     </>
   );
 }
