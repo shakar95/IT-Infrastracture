@@ -24,8 +24,51 @@ import {
   Cpu,
   Eye,
   Edit2,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
+
+// Helper function to compress and resize image files before saving
+const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) {
+      return reject(new Error('Selected file is not an image'));
+    }
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function BoqModelDetailsModal({
   model,
@@ -85,6 +128,53 @@ export default function BoqModelDetailsModal({
   const [newLocationInput, setNewLocationInput] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editSavedToast, setEditSavedToast] = useState(false);
+
+  // Photo upload and management state
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoToast, setPhotoToast] = useState(null);
+
+  // Directly upload and save new photo for model (e.g. from Details tab or Edit tab)
+  const handleUploadPhoto = async (file) => {
+    if (!file) return;
+    try {
+      setIsUploadingPhoto(true);
+      const dataUrl = await compressImageFile(file, 1200, 900, 0.85);
+      
+      // Update local edit form state
+      setEditForm((prev) => ({ ...prev, product_image_url: dataUrl }));
+
+      // Save directly to BOQ Model
+      const updater = onUpdateModel || onUpdateTotalQty;
+      if (updater) {
+        await updater(model.id, { product_image_url: dataUrl });
+      }
+
+      setPhotoToast(isKu ? 'وێنەی دیڤایسەکە بە سەرکەوتوویی نوێکرایەوە!' : 'Device photo updated successfully!');
+      setTimeout(() => setPhotoToast(null), 3500);
+    } catch (err) {
+      alert(err.message || 'Failed to process image');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!window.confirm(isKu ? 'دڵنیایت لە سڕینەوەی وێنەی ئەم ئامێرە؟' : 'Are you sure you want to remove this hardware photo?')) return;
+    try {
+      setIsUploadingPhoto(true);
+      setEditForm((prev) => ({ ...prev, product_image_url: '' }));
+      const updater = onUpdateModel || onUpdateTotalQty;
+      if (updater) {
+        await updater(model.id, { product_image_url: null });
+      }
+      setPhotoToast(isKu ? 'وێنەی ئامێرەکە سڕایەوە' : 'Device photo removed');
+      setTimeout(() => setPhotoToast(null), 3000);
+    } catch (err) {
+      alert(err.message || 'Failed to remove image');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   // Fullscreen image zoom
   const [isImageLightboxOpen, setIsImageLightboxOpen] = useState(false);
@@ -824,7 +914,7 @@ export default function BoqModelDetailsModal({
             {/* TAB 3: HARDWARE SPECS & CATALOG */}
             {activeTab === 'details' && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start animate-fadeIn">
-                {/* Product Photo Showcase */}
+                {/* Product Photo Showcase with Direct Upload / Update */}
                 <div className="md:col-span-5 space-y-3">
                   <div className="relative group rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 aspect-[4/3] shadow-inner flex items-center justify-center">
                     {model.product_image_url ? (
@@ -834,24 +924,78 @@ export default function BoqModelDetailsModal({
                         className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="text-center p-6 text-slate-500">
-                        <Layers className="w-12 h-12 mx-auto mb-2 opacity-40" />
-                        <p className="text-xs">No Hardware Photo Available</p>
+                      <div className="text-center p-6 text-slate-500 flex flex-col items-center">
+                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-40 text-blue-400" />
+                        <p className="text-xs mb-3 text-slate-400">
+                          {isKu ? 'هیچ وێنەیەک بۆ ئەم ئامێرە دانەنراوە' : 'No Hardware Photo Available'}
+                        </p>
+                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/30 transition active:scale-95">
+                          <Upload className="w-4 h-4" />
+                          <span>{isKu ? 'دانانی وێنەی ئامێر' : 'Upload Device Photo'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                          />
+                        </label>
                       </div>
                     )}
 
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />
 
-                    {model.product_image_url && (
-                      <button
-                        onClick={() => setIsImageLightboxOpen(true)}
-                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/90 text-white backdrop-blur-md border border-slate-700 hover:bg-blue-600 transition shadow-lg"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span>{isKu ? 'گەورەکردنی وێنە' : 'Zoom Image'}</span>
-                      </button>
-                    )}
+                    {/* Quick Image Action Controls Overlay */}
+                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-auto">
+                      <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/95 text-white backdrop-blur-md border border-slate-700 hover:bg-blue-600 hover:border-blue-500 transition shadow-lg active:scale-95">
+                        <Camera className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{isKu ? 'گۆڕینی وێنە' : 'Change Photo'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                        />
+                      </label>
+
+                      <div className="flex items-center gap-1.5">
+                        {model.product_image_url && (
+                          <button
+                            type="button"
+                            onClick={handleRemovePhoto}
+                            title={isKu ? 'سڕینەوەی وێنە' : 'Remove Photo'}
+                            className="p-1.5 rounded-xl bg-slate-900/90 text-slate-400 hover:text-red-400 border border-slate-700 hover:bg-slate-800 transition shadow-lg"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {model.product_image_url && (
+                          <button
+                            type="button"
+                            onClick={() => setIsImageLightboxOpen(true)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/90 text-white backdrop-blur-md border border-slate-700 hover:bg-slate-800 transition shadow-lg"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            <span>{isKu ? 'گەورەکردن' : 'Zoom'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Photo status toast */}
+                  {photoToast && (
+                    <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-fadeIn">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{photoToast}</span>
+                    </div>
+                  )}
+
+                  {isUploadingPhoto && (
+                    <div className="p-3 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                      <span>{isKu ? 'وێنەکە پرۆسێس دەکرێت و دادەنرێت...' : 'Optimizing and saving photo...'}</span>
+                    </div>
+                  )}
 
                   {model.manual_pdf_url && (
                     <a
@@ -1197,33 +1341,137 @@ export default function BoqModelDetailsModal({
                     </div>
                   </div>
 
-                  {/* URLs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        {isKu ? 'بەستەری وێنەی ئامێر (Image URL)' : 'Product Photo Image URL'}
+                  {/* Hardware Photo & Documentation */}
+                  <div className="pt-3 border-t border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-amber-400" />
+                        <span>{isKu ? 'وێنەی ئامێر (Device Photo)' : 'Device Photo'}</span>
                       </label>
-                      <input
-                        type="text"
-                        value={editForm.product_image_url}
-                        onChange={(e) => setEditForm({ ...editForm, product_image_url: e.target.value })}
-                        placeholder="https://..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
-                      />
+                      {editForm.product_image_url ? (
+                        <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                          {isKu ? 'وێنە دانراوە' : 'Photo Attached'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-500">
+                          {isKu ? 'هیچ وێنەیەک دانەنراوە' : 'No Photo'}
+                        </span>
+                      )}
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        {isKu ? 'بەستەری داتاشیت و مانیواڵی فەرمی (PDF URL)' : 'Official Datasheet / PDF Manual URL'}
-                      </label>
-                      <input
-                        type="text"
-                        value={editForm.manual_pdf_url}
-                        onChange={(e) => setEditForm({ ...editForm, manual_pdf_url: e.target.value })}
-                        placeholder="https://..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+                      {/* Photo Thumbnail Preview */}
+                      <div className="sm:col-span-4">
+                        <div className="relative group rounded-xl overflow-hidden border-2 border-dashed border-slate-700 bg-slate-950 aspect-[4/3] flex flex-col items-center justify-center p-2">
+                          {editForm.product_image_url ? (
+                            <>
+                              <img
+                                src={editForm.product_image_url}
+                                alt="Device preview"
+                                className="w-full h-full object-cover rounded-lg"
+                              />
+                              <div className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2 p-2">
+                                <label className="cursor-pointer p-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow transition" title={isKu ? 'گۆڕینی وێنە' : 'Change Photo'}>
+                                  <Camera className="w-4 h-4" />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={handleRemovePhoto}
+                                  title={isKu ? 'سڕینەوەی وێنە' : 'Remove Photo'}
+                                  className="p-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 text-white shadow transition"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <label className="cursor-pointer flex flex-col items-center justify-center text-center p-3 w-full h-full hover:bg-slate-900/60 transition rounded-lg">
+                              <ImageIcon className="w-8 h-8 text-slate-600 mb-1" />
+                              <span className="text-[11px] font-bold text-blue-400">
+                                {isKu ? '+ دانانی وێنە' : '+ Add Photo'}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Photo Upload Actions & URL Input */}
+                      <div className="sm:col-span-8 space-y-2.5">
+                        <div className="flex flex-wrap gap-2">
+                          <label className="cursor-pointer flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition active:scale-95">
+                            <Upload className="w-4 h-4" />
+                            <span>{isKu ? 'ئەپلۆدکردن لە ئامێرەکەت' : 'Upload from Device'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                            />
+                          </label>
+
+                          <label className="cursor-pointer inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold shadow-md transition active:scale-95">
+                            <Camera className="w-4 h-4 text-amber-400" />
+                            <span>{isKu ? 'کامێرا' : 'Camera'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
+                            />
+                          </label>
+
+                          {editForm.product_image_url && (
+                            <button
+                              type="button"
+                              onClick={handleRemovePhoto}
+                              className="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700 text-xs font-semibold transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-slate-400 mb-1">
+                            {isKu ? 'یان بەستەری ڕاستەوخۆ (Image URL):' : 'Or Direct Image URL:'}
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.product_image_url}
+                            onChange={(e) => setEditForm({ ...editForm, product_image_url: e.target.value })}
+                            placeholder="https://..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
                     </div>
+                  </div>
+
+                  {/* PDF Manual URL */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      {isKu ? 'بەستەری داتاشیت و مانیواڵی فەرمی (PDF Datasheet URL)' : 'Official Datasheet / PDF Manual URL'}
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.manual_pdf_url}
+                      onChange={(e) => setEditForm({ ...editForm, manual_pdf_url: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+                    />
                   </div>
 
                   {/* Rack Mount Configuration */}

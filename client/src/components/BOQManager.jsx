@@ -16,9 +16,43 @@ import {
   Barcode,
   Eye,
   Maximize2,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import BoqModelDetailsModal from './BoqModelDetailsModal';
+
+const compressImage = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) return reject(new Error('Invalid image'));
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function BOQManager({
   boqModels = [],
@@ -499,11 +533,35 @@ export default function BOQManager({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Product Image URL</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-300">
+                      {isKu ? 'وێنەی ئامێر (Photo)' : 'Product Photo'}
+                    </label>
+                    <label className="cursor-pointer text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{isKu ? 'ئەپلۆدکردنی وێنە' : 'Upload File'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const dataUrl = await compressImage(file);
+                            setFormData((prev) => ({ ...prev, product_image_url: dataUrl }));
+                          } catch (err) {
+                            alert('Failed to process image');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                   <input
-                    type="url"
+                    type="text"
                     value={formData.product_image_url}
                     onChange={(e) => setFormData({ ...formData, product_image_url: e.target.value })}
+                    placeholder="https://... or upload photo"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
