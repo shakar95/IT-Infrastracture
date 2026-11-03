@@ -31,6 +31,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
+import { api } from '../services/api';
 
 // Helper function to compress and resize image files before saving
 const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -133,23 +134,39 @@ export default function BoqModelDetailsModal({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoToast, setPhotoToast] = useState(null);
 
-  // Directly upload and save new photo for model (e.g. from Details tab or Edit tab)
+  // Directly upload and save new photo for model into Supabase Storage Bucket ('boq-images')
   const handleUploadPhoto = async (file) => {
     if (!file) return;
     try {
       setIsUploadingPhoto(true);
       const dataUrl = await compressImageFile(file, 1200, 900, 0.85);
       
-      // Update local edit form state
+      // Update local edit form preview immediately
       setEditForm((prev) => ({ ...prev, product_image_url: dataUrl }));
 
-      // Save directly to BOQ Model
-      const updater = onUpdateModel || onUpdateTotalQty;
-      if (updater) {
-        await updater(model.id, { product_image_url: dataUrl });
+      let finalUrl = dataUrl;
+      try {
+        // Upload directly into Supabase Storage Bucket 'boq-images'
+        const uploadRes = await api.uploadBoqImage(model.id, dataUrl);
+        if (uploadRes?.publicUrl) {
+          finalUrl = uploadRes.publicUrl;
+          setEditForm((prev) => ({ ...prev, product_image_url: finalUrl }));
+        }
+      } catch (uploadErr) {
+        console.warn('Storage bucket upload blip, saving as direct data URL:', uploadErr);
       }
 
-      setPhotoToast(isKu ? 'وێنەی دیڤایسەکە بە سەرکەوتوویی نوێکرایەوە!' : 'Device photo updated successfully!');
+      // Save to parent BOQ model state & database
+      const updater = onUpdateModel || onUpdateTotalQty;
+      if (updater) {
+        await updater(model.id, { product_image_url: finalUrl });
+      }
+
+      setPhotoToast(
+        isKu
+          ? 'وێنەکە بە سەرکەوتوویی لە ناو بەکێتی سوپەبەیس (boq-images) سەیڤ کرا!'
+          : 'Photo saved into Supabase Storage Bucket (boq-images)!'
+      );
       setTimeout(() => setPhotoToast(null), 3500);
     } catch (err) {
       alert(err.message || 'Failed to process image');

@@ -65,6 +65,22 @@ export const api = {
       body: JSON.stringify(updates),
     }));
   },
+  async uploadBoqImage(id, fileOrBase64) {
+    if (typeof fileOrBase64 === 'string') {
+      return handleResponse(await fetch(`${API_BASE}/boq/${id}/image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: fileOrBase64 }),
+      }));
+    } else {
+      const formData = new FormData();
+      formData.append('image', fileOrBase64);
+      return handleResponse(await fetch(`${API_BASE}/boq/${id}/image`, {
+        method: 'POST',
+        body: formData,
+      }));
+    }
+  },
   async deleteBoqModel(id) {
     return handleResponse(await fetch(`${API_BASE}/boq/${id}`, {
       method: 'DELETE',

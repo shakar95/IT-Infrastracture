@@ -1,8 +1,14 @@
 import express from 'express';
+import multer from 'multer';
 import { supabase, isSupabaseConfigured } from '../config/supabase.js';
 import { mockBoqModels, mockDevices, mockCategories } from '../services/mockData.js';
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
 
 // GET all BOQ models with provisioned counts
 router.get('/', async (req, res) => {
@@ -132,6 +138,87 @@ router.delete('/:id', async (req, res) => {
     mockBoqModels.splice(idx, 1);
     res.json({ success: true, message: 'BOQ Model removed' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/boq/:id/image - Uploads photo directly into Supabase Storage Bucket ('boq-images')
+router.post('/:id/image', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    let fileBuffer;
+    let mimeType = 'image/jpeg';
+    let fileExt = 'jpg';
+
+    if (req.file) {
+      fileBuffer = req.file.buffer;
+      mimeType = req.file.mimetype || 'image/jpeg';
+      fileExt = req.file.originalname?.split('.').pop() || 'jpg';
+    } else if (req.body?.imageBase64) {
+      const base64Str = req.body.imageBase64;
+      const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1];
+        fileBuffer = Buffer.from(matches[2], 'base64');
+        fileExt = mimeType.split('/')[1] || 'jpg';
+      } else {
+        fileBuffer = Buffer.from(base64Str, 'base64');
+      }
+    } else {
+      return res.status(400).json({ error: 'No image file or imageBase64 provided' });
+    }
+
+    const fileName = `model-${id}-${Date.now()}.${fileExt}`;
+
+    if (isSupabaseConfigured) {
+      // 1. Upload to Supabase Storage Bucket 'boq-images'
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('boq-images')
+        .upload(fileName, fileBuffer, {
+          contentType: mimeType,
+          upsert: true,
+        });
+
+      if (uploadErr) {
+        console.error('Supabase Storage upload error:', uploadErr);
+        throw uploadErr;
+      }
+
+      // 2. Retrieve public CDN URL from bucket
+      const { data: urlData } = supabase.storage
+        .from('boq-images')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+
+      // 3. Update boq_models table with the storage URL
+      const { data: updatedModel, error: updateErr } = await supabase
+        .from('boq_models')
+        .update({ product_image_url: publicUrl })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      return res.json({
+        success: true,
+        publicUrl,
+        storagePath: uploadData.path,
+        bucket: 'boq-images',
+        model: updatedModel,
+      });
+    }
+
+    // In-memory fallback
+    const dataUrl = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
+    const idx = mockBoqModels.findIndex((m) => m.id === id);
+    if (idx !== -1) {
+      mockBoqModels[idx].product_image_url = dataUrl;
+    }
+    return res.json({ success: true, publicUrl: dataUrl });
+  } catch (err) {
+    console.error('Error uploading BOQ image to bucket:', err);
     res.status(500).json({ error: err.message });
   }
 });
