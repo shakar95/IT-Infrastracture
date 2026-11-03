@@ -1,7 +1,7 @@
 @echo off
 set "PATH=%~dp0tools\git\cmd;%PATH%"
 echo =================================================================
-echo   Push to GitHub: https://github.com/shakar95/IT-Infrastracture
+echo   Push to GitHub: https://github.com/shakaralii/IT-Infrastracture
 echo =================================================================
 echo.
 set /p GITHUB_TOKEN="Enter your GitHub Personal Access Token (PAT): "
@@ -14,7 +14,7 @@ if "%GITHUB_TOKEN%"=="" (
 )
 echo.
 echo Pushing main branch to GitHub...
-git push https://shakar95:%GITHUB_TOKEN%@github.com/shakar95/IT-Infrastracture.git main
+git push https://shakaralii:%GITHUB_TOKEN%@github.com/shakaralii/IT-Infrastracture.git main
 echo.
 echo =================================================================
 echo Push process completed!
