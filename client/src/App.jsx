@@ -30,6 +30,14 @@ export default function App() {
   const [selectedMapPlanId, setSelectedMapPlanId] = useState(null);
   const [selectedMapDevice, setSelectedMapDevice] = useState(null);
 
+  // Cross-component selected BOQ category filter (from Dashboard cards)
+  const [selectedBoqCategory, setSelectedBoqCategory] = useState('all');
+
+  const handleSelectCategoryFromDashboard = (categoryId) => {
+    setSelectedBoqCategory(categoryId || 'all');
+    setActiveTab('boq');
+  };
+
   // Load all data on mount
   useEffect(() => {
     loadAllData();
@@ -238,6 +246,7 @@ export default function App() {
                 boqModels={boqModels}
                 devices={devices}
                 setActiveTab={setActiveTab}
+                onSelectCategory={handleSelectCategoryFromDashboard}
                 lang={lang}
               />
             )}
@@ -248,6 +257,8 @@ export default function App() {
                 categories={categories}
                 devices={devices}
                 floorPlans={floorPlans}
+                selectedCategory={selectedBoqCategory}
+                onSelectCategory={setSelectedBoqCategory}
                 onAddModel={handleAddBoqModel}
                 onUpdateModel={handleUpdateBoqModel}
                 onDeleteModel={handleDeleteBoqModel}

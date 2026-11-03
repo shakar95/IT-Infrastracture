@@ -43,6 +43,7 @@ export default function DashboardOverview({
   boqModels = [],
   devices = [],
   setActiveTab,
+  onSelectCategory,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
@@ -167,7 +168,13 @@ export default function DashboardOverview({
           return (
             <div
               key={i}
-              onClick={() => setActiveTab(stat.tab)}
+              onClick={() => {
+                if (stat.tab === 'boq' && onSelectCategory) {
+                  onSelectCategory('all');
+                } else {
+                  setActiveTab(stat.tab);
+                }
+              }}
               className="cursor-pointer group relative p-5 bg-slate-900/70 border border-slate-800/80 hover:border-blue-500/40 rounded-2xl transition-all duration-200 hover:-translate-y-0.5 shadow-sm"
             >
               <div className="flex items-center justify-between">
@@ -199,7 +206,13 @@ export default function DashboardOverview({
             </p>
           </div>
           <button
-            onClick={() => setActiveTab('boq')}
+            onClick={() => {
+              if (onSelectCategory) {
+                onSelectCategory('all');
+              } else {
+                setActiveTab('boq');
+              }
+            }}
             className="inline-flex items-center gap-1 text-xs font-semibold text-blue-400 hover:text-blue-300"
           >
             <span>{isKu ? 'بینینی کەتەلۆکی BOQ' : 'View Full BOQ'}</span>
@@ -222,8 +235,14 @@ export default function DashboardOverview({
             return (
               <div
                 key={cat.id}
-                onClick={() => setActiveTab('boq')}
-                className="cursor-pointer p-4 bg-slate-900/60 border border-slate-800 hover:border-slate-700 rounded-2xl hover:bg-slate-850/80 transition group"
+                onClick={() => {
+                  if (onSelectCategory) {
+                    onSelectCategory(cat.id);
+                  } else {
+                    setActiveTab('boq');
+                  }
+                }}
+                className="cursor-pointer p-4 bg-slate-900/60 border border-slate-800 hover:border-blue-500/60 rounded-2xl hover:bg-slate-800/80 transition-all duration-200 group relative shadow-sm hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-0.5"
               >
                 <div className="flex items-start justify-between">
                   <div
@@ -232,9 +251,14 @@ export default function DashboardOverview({
                   >
                     <IconComponent className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
-                    {provCount} / {totalQty} Units
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                      {provCount} / {totalQty} Units
+                    </span>
+                    <div className="p-1 rounded-md text-slate-500 group-hover:text-blue-400 group-hover:bg-blue-500/10 transition">
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="mt-3">
@@ -261,6 +285,12 @@ export default function DashboardOverview({
                       }}
                     />
                   </div>
+                </div>
+
+                {/* Card Action Hint */}
+                <div className="mt-2.5 pt-2 border-t border-slate-800/40 flex items-center justify-between text-[10px] text-slate-500 group-hover:text-blue-400 transition">
+                  <span>{isKu ? 'کلیک بکە بۆ بینینی کەرەستەکانی ئەم بەشە' : 'Click to view BOQ models'}</span>
+                  <span className="font-bold">→</span>
                 </div>
               </div>
             );

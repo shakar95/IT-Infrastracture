@@ -25,6 +25,8 @@ export default function BOQManager({
   categories = [],
   devices = [],
   floorPlans = [],
+  selectedCategory = 'all',
+  onSelectCategory,
   onAddModel,
   onUpdateModel,
   onDeleteModel,
@@ -38,7 +40,11 @@ export default function BOQManager({
   const isKu = lang === 'ku';
 
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [internalCategory, setInternalCategory] = useState('all');
+  const activeCategory = onSelectCategory ? selectedCategory : internalCategory;
+  const setCategory = onSelectCategory || setInternalCategory;
+  const activeCategoryObj = categories.find((c) => c.id === activeCategory);
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [bulkModalModel, setBulkModalModel] = useState(null);
   const [inspectingModel, setInspectingModel] = useState(null);
@@ -70,7 +76,7 @@ export default function BOQManager({
 
   // Filtered list
   const filteredModels = boqModels.filter((m) => {
-    const matchesCat = selectedCategory === 'all' || m.category_id === selectedCategory;
+    const matchesCat = activeCategory === 'all' || m.category_id === activeCategory;
     const s = search.toLowerCase();
     const matchesSearch =
       m.brand.toLowerCase().includes(s) ||
@@ -153,8 +159,8 @@ export default function BOQManager({
 
         {/* Category Pill / Select */}
         <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
+          value={activeCategory}
+          onChange={(e) => setCategory(e.target.value)}
           className="w-full md:w-64 bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500 transition"
         >
           <option value="all">{t.allCategories} ({boqModels.length})</option>
@@ -165,6 +171,55 @@ export default function BOQManager({
           ))}
         </select>
       </div>
+
+      {/* Active Category Filter Tag Banner (When navigated from Dashboard or selected) */}
+      {activeCategory !== 'all' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-blue-950/40 border border-blue-500/30 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-3 h-3 rounded-full shadow-sm"
+              style={{ backgroundColor: activeCategoryObj?.color_code || '#3B82F6' }}
+            />
+            <span className="text-slate-400">
+              {isKu ? 'ئامێرە فلتەرکراوەکانی بەشی:' : 'Showing BOQ models for:'}
+            </span>
+            <span className="font-bold text-white px-2.5 py-1 rounded-lg bg-blue-600/30 border border-blue-500/40">
+              {isKu ? activeCategoryObj?.name_ku : activeCategoryObj?.name}
+            </span>
+            <span className="text-slate-400 font-mono">
+              ({filteredModels.length} {isKu ? 'مۆدێل دۆزرایەوە' : 'models found'})
+            </span>
+          </div>
+          <button
+            onClick={() => setCategory('all')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold transition active:scale-95"
+          >
+            <X className="w-3.5 h-3.5 text-slate-400" />
+            <span>{isKu ? 'پیشاندانی هەموو کەتەلۆگ' : 'Clear Filter / Show All'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Empty State when no models match filter */}
+      {filteredModels.length === 0 && (
+        <div className="text-center py-12 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-8">
+          <Layers className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+          <h3 className="text-sm font-semibold text-white">
+            {isKu ? 'هیچ مۆدێلێک لەم بەشەدا نەدۆزرایەوە' : 'No models found in this category'}
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            {isKu
+              ? 'دەتوانیت فلتەرەکە لابدەیت بۆ بینینی هەموو کەرەستەکانی کەتەلۆگ'
+              : 'Try selecting all categories or clearing your search term.'}
+          </p>
+          <button
+            onClick={() => setCategory('all')}
+            className="mt-4 px-4 py-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-600/30 transition"
+          >
+            {isKu ? 'پیشاندانی هەموو بەشەکان' : 'Show All Categories'}
+          </button>
+        </div>
+      )}
 
       {/* Models Grid Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
