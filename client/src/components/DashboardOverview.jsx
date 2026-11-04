@@ -46,12 +46,21 @@ export default function DashboardOverview({
   categories = [],
   boqModels = [],
   devices = [],
+  activeProject = null,
   setActiveTab,
   onSelectCategory,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
+
+  const projectName = isKu
+    ? (activeProject?.name_ku || activeProject?.name || 'پرۆژەی نایابی سیتەک')
+    : (activeProject?.name || 'VIP Mountain Estate');
+
+  const projectLocation = isKu
+    ? (activeProject?.location_ku || activeProject?.location || 'سلێمانی، هەرێمی کوردستان')
+    : (activeProject?.location || 'Sulaymaniyah, KRI');
 
   // Calculations
   const totalBoqModelsCount = boqModels.length;
@@ -122,7 +131,7 @@ export default function DashboardOverview({
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30 mb-3">
             <ShieldCheck className="w-4 h-4 text-amber-400" />
-            <span>{isKu ? 'پرۆژەی نایابی ڤێلای سیتەک • سلێمانی' : 'VIP Mountain Estate • Sulaymaniyah, KRI'}</span>
+            <span>{projectName} • {projectLocation}</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             {isKu

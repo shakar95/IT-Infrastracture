@@ -26,7 +26,8 @@ async function getModelAndFloorPlan(boqModelId, floorPlanId) {
 // GET all devices (with optional filters)
 router.get('/', async (req, res) => {
   try {
-    const { status, floor_plan_id, zone, category_id, search } = req.query;
+    const { status, floor_plan_id, zone, category_id, search, project_id } = req.query;
+    const targetProject = project_id || 'proj-sitak';
 
     if (isSupabaseConfigured) {
       let query = supabase.from('devices').select('*, boq_models(*, categories(*)), floor_plans(*)').order('created_at', { ascending: false });
@@ -35,44 +36,46 @@ router.get('/', async (req, res) => {
       if (zone) query = query.eq('placement_zone', zone);
       
       const { data, error } = await query;
-      if (error) throw error;
+      if (!error && data) {
+        let result = data.map((d) => ({
+          ...d,
+          boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : null,
+          floor_plan: d.floor_plans || null,
+        }));
 
-      let result = data.map((d) => ({
-        ...d,
-        boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : null,
-        floor_plan: d.floor_plans || null,
-      }));
+        if (category_id) {
+          result = result.filter((d) => d.boq_model?.category_id === category_id);
+        }
+        if (search) {
+          const s = search.toLowerCase();
+          result = result.filter(
+            (d) =>
+              d.custom_label_id.toLowerCase().includes(s) ||
+              (d.ip_address && d.ip_address.includes(s)) ||
+              (d.mac_address && d.mac_address.toLowerCase().includes(s)) ||
+              (d.serial_number && d.serial_number.toLowerCase().includes(s)) ||
+              (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
+              (d.boq_model && (d.boq_model.brand + ' ' + d.boq_model.model).toLowerCase().includes(s))
+          );
+        }
 
-      if (category_id) {
-        result = result.filter((d) => d.boq_model?.category_id === category_id);
+        return res.json(result);
       }
-      if (search) {
-        const s = search.toLowerCase();
-        result = result.filter(
-          (d) =>
-            d.custom_label_id.toLowerCase().includes(s) ||
-            (d.ip_address && d.ip_address.includes(s)) ||
-            (d.mac_address && d.mac_address.toLowerCase().includes(s)) ||
-            (d.serial_number && d.serial_number.toLowerCase().includes(s)) ||
-            (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
-            (d.boq_model && (d.boq_model.brand + ' ' + d.boq_model.model).toLowerCase().includes(s))
-        );
-      }
-
-      return res.json(result);
     }
 
-    // In-memory filter
-    let result = mockDevices.map((d) => {
-      const model = mockBoqModels.find((m) => m.id === d.boq_model_id);
-      const category = model ? mockCategories.find((c) => c.id === model.category_id) : null;
-      const floorPlan = mockFloorPlans.find((fp) => fp.id === d.floor_plan_id);
-      return {
-        ...d,
-        boq_model: model ? { ...model, category } : null,
-        floor_plan: floorPlan || null,
-      };
-    });
+    // In-memory filter - Strictly scoped to targetProject
+    let result = mockDevices
+      .filter((d) => (d.project_id || 'proj-sitak') === targetProject)
+      .map((d) => {
+        const model = mockBoqModels.find((m) => m.id === d.boq_model_id);
+        const category = model ? mockCategories.find((c) => c.id === model.category_id) : null;
+        const floorPlan = mockFloorPlans.find((fp) => fp.id === d.floor_plan_id);
+        return {
+          ...d,
+          boq_model: model ? { ...model, category } : null,
+          floor_plan: floorPlan || null,
+        };
+      });
 
     if (status) result = result.filter((d) => d.installation_status === status);
     if (floor_plan_id) result = result.filter((d) => d.floor_plan_id === floor_plan_id);
@@ -143,6 +146,7 @@ router.post('/', async (req, res) => {
     validateDeviceGuardrails(deviceData, model, floorPlan, allDevices);
 
     const payload = {
+      project_id: deviceData.project_id || 'proj-sitak',
       boq_model_id: deviceData.boq_model_id,
       custom_label_id: deviceData.custom_label_id || `DEV-${Math.floor(100 + Math.random() * 900)}`,
       serial_number: deviceData.serial_number || `SN-${Date.now().toString().slice(-6)}`,

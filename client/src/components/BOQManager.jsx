@@ -21,11 +21,16 @@ import {
   MapPin,
   Download,
   FileSpreadsheet,
+  History,
+  Table2,
+  LayoutGrid,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import BoqModelDetailsModal from './BoqModelDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
 import ExcelBoqImportModal from './ExcelBoqImportModal';
+import BoqVersionsSidebar from './BoqVersionsSidebar';
+import BoqVersionDiffModal from './BoqVersionDiffModal';
 import { downloadBoqExcelTemplate } from '../utils/excelBoqUtils';
 
 const compressImage = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -65,6 +70,7 @@ export default function BOQManager({
   categories = [],
   devices = [],
   floorPlans = [],
+  activeProject,
   selectedCategory = 'all',
   onSelectCategory,
   onAddModel,
@@ -77,12 +83,15 @@ export default function BOQManager({
   onCreateCategory,
   onCreateFloorPlan,
   onBulkImport,
+  onRestoreVersion,
+  onCreateSnapshot,
   lang = 'en',
 }) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
 
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [internalCategory, setInternalCategory] = useState('all');
   const activeCategory = onSelectCategory ? selectedCategory : internalCategory;
   const setCategory = onSelectCategory || setInternalCategory;
@@ -90,6 +99,8 @@ export default function BOQManager({
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isVersionsSidebarOpen, setIsVersionsSidebarOpen] = useState(false);
+  const [diffVersion, setDiffVersion] = useState(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [bulkModalModel, setBulkModalModel] = useState(null);
   const [inspectingModel, setInspectingModel] = useState(null);
@@ -200,6 +211,17 @@ export default function BOQManager({
           <p className="text-xs sm:text-sm text-slate-400">{t.boqSubtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Versions History */}
+          <button
+            type="button"
+            onClick={() => setIsVersionsSidebarOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 shadow transition active:scale-95 shrink-0"
+            title={isKu ? 'مێژوو و ڤێرژنەکانی کەتەلۆگی BOQ' : 'BOQ Versions & History'}
+          >
+            <History className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{isKu ? 'ڤێرژنەکان' : 'Versions'}</span>
+          </button>
+
           {/* Download Excel Template */}
           <button
             type="button"
@@ -242,7 +264,7 @@ export default function BOQManager({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Filter, Search & View Switcher Bar */}
       <div className="flex flex-col md:flex-row items-center gap-3 bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -253,6 +275,34 @@ export default function BOQManager({
             placeholder={t.searchBoq}
             className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
           />
+        </div>
+
+        {/* View Mode Toggle (Grid vs Table) */}
+        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`p-1.5 rounded-lg text-xs font-semibold transition ${
+              viewMode === 'grid'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title={isKu ? 'پیشاندان بە کارد' : 'Card Grid View'}
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`p-1.5 rounded-lg text-xs font-semibold transition ${
+              viewMode === 'table'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title={isKu ? 'پیشاندان بە تەیبڵی مۆدێرن' : 'Modern Table View'}
+          >
+            <Table2 className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Category Pill / Select with Add Category Button */}
@@ -308,8 +358,53 @@ export default function BOQManager({
         </div>
       )}
 
+      {/* Empty State when project has NO models at all */}
+      {boqModels.length === 0 && (
+        <div className="text-center py-16 bg-slate-900/40 border-2 border-dashed border-slate-800 rounded-3xl p-8 space-y-4">
+          <div className="w-16 h-16 rounded-3xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
+            <Layers className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">
+              {isKu ? 'ئەم پڕۆژەیە (یان سایتە) هێشتا هیچ کەرەستەیەکی BOQ ی تێدا نییە' : 'This project has no BOQ equipment catalog yet'}
+            </h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+              {isKu
+                ? 'دەتوانیت تێمپلەیتی ستانداردی ئێکسڵ داونلۆد بکەیت، یان لە ڕێگەی فایلی ئێکسڵەوە ڕاستەوخۆ کەرەستەکانی بۆ هاوردە بکەیت.'
+                : 'Download the standardized BOQ Excel template or import your spreadsheet directly to populate this project.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => downloadBoqExcelTemplate(categories)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>{isKu ? 'داونلۆدی تێمپلەیت (.xlsx)' : 'Download Template (.xlsx)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsExcelModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 transition active:scale-95"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>{isKu ? 'هاوردەکردن لە ئێکسڵەوە' : 'Import from Excel'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isKu ? '+ زیادکردنی بە دەستی' : '+ Add Manually'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Empty State when no models match filter */}
-      {filteredModels.length === 0 && (
+      {boqModels.length > 0 && filteredModels.length === 0 && (
         <div className="text-center py-12 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-8">
           <Layers className="w-10 h-10 text-slate-500 mx-auto mb-3" />
           <h3 className="text-sm font-semibold text-white">
@@ -330,7 +425,8 @@ export default function BOQManager({
       )}
 
       {/* Models Grid Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {viewMode === 'grid' && filteredModels.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredModels.map((m) => {
           const category = categories.find((c) => c.id === m.category_id);
           const isFullyProvisioned = (m.provisioned_count || 0) >= m.total_qty;
@@ -504,6 +600,170 @@ export default function BOQManager({
           );
         })}
       </div>
+      )}
+
+      {/* View Mode: Modern Table View */}
+      {viewMode === 'table' && filteredModels.length > 0 && (
+        <div className="border border-slate-800 rounded-3xl overflow-hidden bg-slate-900/60 shadow-xl animate-fadeIn">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/90 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'ئامێر و مۆدێل' : 'Equipment'}</th>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'بەش (Category)' : 'Category'}</th>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'پێناسە و تایبەتمەندی' : 'Description'}</th>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'شوێن و زۆن' : 'Zone / Mounting'}</th>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'ژمارە و لەیبڵکردن' : 'Qty & Provisioned'}</th>
+                  <th className="py-3 px-4 font-semibold">{isKu ? 'نرخ' : 'Unit Cost'}</th>
+                  <th className="py-3 px-4 font-semibold text-right">{isKu ? 'کردارەکان' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredModels.map((m) => {
+                  const category = categories.find((c) => c.id === m.category_id);
+                  const isFullyProvisioned = (m.provisioned_count || 0) >= m.total_qty;
+                  const progressPct = m.total_qty > 0 ? Math.min(100, Math.round(((m.provisioned_count || 0) / m.total_qty) * 100)) : 0;
+
+                  return (
+                    <tr
+                      key={m.id}
+                      className="hover:bg-slate-800/40 transition group cursor-pointer"
+                      onClick={() => handleOpenProvision(m)}
+                    >
+                      {/* Photo & Brand/Model */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={m.product_image_url}
+                            alt={m.model}
+                            className="w-12 h-12 object-cover rounded-xl border border-slate-800 bg-slate-950 group-hover:border-blue-500/50 transition shrink-0"
+                            onError={(e) => {
+                              e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+                            }}
+                          />
+                          <div>
+                            <span className="font-semibold text-white block text-sm">{m.brand}</span>
+                            <span className="font-mono text-xs text-blue-400 font-medium">{m.model}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="py-3 px-4">
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold border"
+                          style={{
+                            backgroundColor: `${category?.color_code || '#3B82F6'}15`,
+                            color: category?.color_code || '#3B82F6',
+                            borderColor: `${category?.color_code || '#3B82F6'}30`,
+                          }}
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: category?.color_code || '#3B82F6' }}
+                          />
+                          <span>{isKu ? (category?.name_ku || category?.name) : category?.name}</span>
+                        </span>
+                      </td>
+
+                      {/* Description */}
+                      <td className="py-3 px-4 max-w-xs">
+                        <p className="text-slate-300 text-xs line-clamp-2">{m.description || '—'}</p>
+                      </td>
+
+                      {/* Zone & Rack */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-slate-300 capitalize text-xs">
+                            {m.allowed_zones?.join(', ') || 'indoor'}
+                          </span>
+                          {m.is_rack_mounted && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-mono font-bold w-fit">
+                              {m.rack_unit_size || 1}U Rack
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Qty & Progress */}
+                      <td className="py-3 px-4">
+                        <div className="space-y-1.5 w-32">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="font-bold text-white">
+                              {m.provisioned_count || 0} / {m.total_qty}
+                            </span>
+                            <span className={`font-semibold ${isFullyProvisioned ? 'text-emerald-400' : 'text-slate-400'}`}>
+                              {progressPct}%
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isFullyProvisioned ? 'bg-emerald-500' : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Cost */}
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-xs font-semibold text-white block">
+                          ${Number(m.unit_cost || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          Tot: ${(Number(m.unit_cost || 0) * Number(m.total_qty || 0)).toLocaleString()}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProvision(m)}
+                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow transition active:scale-95"
+                          >
+                            + {isKu ? 'پرۆڤیژن' : 'Provision'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(m)}
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                            title={isKu ? 'دەستکاریکردن' : 'Edit'}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteModel(m.id)}
+                            className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
+                            title={isKu ? 'سڕینەوە' : 'Delete'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table Summary Footer */}
+          <div className="p-3.5 bg-slate-950/80 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs">
+            <span className="text-slate-400">
+              {isKu ? `کۆی مۆدێلەکان: ${filteredModels.length}` : `Showing ${filteredModels.length} models`}
+            </span>
+            <div className="flex items-center gap-4 text-slate-300 font-mono">
+              <span>{isKu ? 'کۆی ژمارەی کەرەستەکان:' : 'Total Units:'} <strong className="text-emerald-400">{filteredModels.reduce((acc, m) => acc + (m.total_qty || 0), 0)}</strong></span>
+              <span>{isKu ? 'کۆی بەهای کەتەلۆگ:' : 'Total BOQ Value:'} <strong className="text-amber-300">${filteredModels.reduce((acc, m) => acc + (m.total_qty || 0) * (m.unit_cost || 0), 0).toLocaleString()}</strong></span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add BOQ Model Modal */}
       {isAddModalOpen && (
@@ -841,7 +1101,31 @@ export default function BOQManager({
         isOpen={isExcelModalOpen}
         onClose={() => setIsExcelModalOpen(false)}
         categories={categories}
+        existingModels={boqModels}
         onImport={onBulkImport}
+        lang={lang}
+      />
+
+      {/* BOQ Versions & History Sidebar */}
+      <BoqVersionsSidebar
+        isOpen={isVersionsSidebarOpen}
+        onClose={() => setIsVersionsSidebarOpen(false)}
+        activeProject={activeProject}
+        currentBoqModels={boqModels}
+        onRestoreVersion={onRestoreVersion}
+        onCreateSnapshot={onCreateSnapshot}
+        onOpenDiffModal={(ver) => setDiffVersion(ver)}
+        lang={lang}
+      />
+
+      {/* BOQ Version Diff Modal */}
+      <BoqVersionDiffModal
+        isOpen={Boolean(diffVersion)}
+        onClose={() => setDiffVersion(null)}
+        version={diffVersion}
+        currentModels={boqModels}
+        categories={categories}
+        onRestore={onRestoreVersion}
         lang={lang}
       />
     </div>

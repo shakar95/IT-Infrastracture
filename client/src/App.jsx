@@ -50,21 +50,17 @@ export default function App() {
   const loadAllData = async () => {
     try {
       setIsLoading(true);
-      const [cats, boqs, devs, maps, projs] = await Promise.all([
+      const [cats, projs] = await Promise.all([
         api.getCategories().catch(() => []),
-        api.getBoqModels().catch(() => []),
-        api.getDevices().catch(() => []),
-        api.getMaps().catch(() => []),
         api.getProjects().catch(() => []),
       ]);
 
       setCategories(cats);
-      setBoqModels(boqs);
-      setDevices(devs);
-      setFloorPlans(maps);
 
+      let initialProj = null;
       if (Array.isArray(projs) && projs.length > 0) {
         setProjects(projs);
+        initialProj = projs[0];
         setActiveProject(projs[0]);
       } else {
         const defaultProj = {
@@ -76,10 +72,41 @@ export default function App() {
           client_name: 'VIP Mountain Estate',
         };
         setProjects([defaultProj]);
+        initialProj = defaultProj;
         setActiveProject(defaultProj);
       }
+
+      // Load data scoped strictly to initial project
+      const [boqs, devs, maps] = await Promise.all([
+        api.getBoqModels({ project_id: initialProj.id }).catch(() => []),
+        api.getDevices({ project_id: initialProj.id }).catch(() => []),
+        api.getMaps({ project_id: initialProj.id }).catch(() => []),
+      ]);
+
+      setBoqModels(boqs || []);
+      setDevices(devs || []);
+      setFloorPlans(maps || []);
     } catch (err) {
       console.error('Failed to load project infrastructure data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Re-fetch data whenever switching to another project / site
+  const loadProjectScopedData = async (projectId) => {
+    try {
+      setIsLoading(true);
+      const [boqs, devs, maps] = await Promise.all([
+        api.getBoqModels({ project_id: projectId }).catch(() => []),
+        api.getDevices({ project_id: projectId }).catch(() => []),
+        api.getMaps({ project_id: projectId }).catch(() => []),
+      ]);
+      setBoqModels(boqs || []);
+      setDevices(devs || []);
+      setFloorPlans(maps || []);
+    } catch (err) {
+      console.error('Failed to load project data:', err);
     } finally {
       setIsLoading(false);
     }
@@ -97,7 +124,10 @@ export default function App() {
   // BOQ Actions
   const handleAddBoqModel = async (modelData) => {
     try {
-      const created = await api.createBoqModel(modelData);
+      const created = await api.createBoqModel({
+        ...modelData,
+        project_id: activeProject?.id || 'proj-sitak',
+      });
       setBoqModels((prev) => [created, ...prev]);
     } catch (err) {
       catchGuardrail(err);
@@ -147,17 +177,42 @@ export default function App() {
 
   const handleBulkImportBoq = async (importedItems) => {
     try {
-      const res = await api.bulkImportBoqModels(importedItems);
-      if (Array.isArray(res)) {
-        setBoqModels((prev) => {
-          const map = new Map(prev.map((m) => [m.id, m]));
-          res.forEach((item) => map.set(item.id, item));
-          return Array.from(map.values());
-        });
+      const targetProjId = activeProject?.id || 'proj-sitak';
+      const res = await api.bulkImportBoqModels(importedItems, targetProjId);
+      if (res && res.models) {
+        setBoqModels(res.models);
+      } else if (Array.isArray(res)) {
+        setBoqModels(res);
       }
       return res;
     } catch (err) {
       catchGuardrail(err);
+      throw err;
+    }
+  };
+
+  // Restore BOQ Version
+  const handleRestoreBoqVersion = async (versionId) => {
+    try {
+      const targetProjId = activeProject?.id || 'proj-sitak';
+      const res = await api.restoreBoqVersion(versionId, targetProjId);
+      if (res && res.models) {
+        setBoqModels(res.models);
+      }
+      return res;
+    } catch (err) {
+      alert(err.message || 'Failed to restore BOQ version');
+      throw err;
+    }
+  };
+
+  // Create Manual BOQ Version Snapshot
+  const handleCreateBoqSnapshot = async (snapshotData) => {
+    try {
+      const targetProjId = activeProject?.id || 'proj-sitak';
+      return await api.createBoqSnapshot(targetProjId, snapshotData);
+    } catch (err) {
+      alert(err.message || 'Failed to create BOQ snapshot');
       throw err;
     }
   };
@@ -168,6 +223,10 @@ export default function App() {
       const created = await api.createProject(projectData);
       setProjects((prev) => [...prev, created]);
       setActiveProject(created);
+      // New project starts completely isolated and empty!
+      setBoqModels([]);
+      setDevices([]);
+      setFloorPlans([]);
       return created;
     } catch (err) {
       alert(err.message || 'Failed to create project');
@@ -177,6 +236,7 @@ export default function App() {
 
   const handleSwitchProject = (project) => {
     setActiveProject(project);
+    loadProjectScopedData(project.id);
   };
 
   // Device Actions
@@ -326,6 +386,7 @@ export default function App() {
                 categories={categories}
                 boqModels={boqModels}
                 devices={devices}
+                activeProject={activeProject}
                 setActiveTab={setActiveTab}
                 onSelectCategory={handleSelectCategoryFromDashboard}
                 lang={lang}
@@ -338,6 +399,7 @@ export default function App() {
                 categories={categories}
                 devices={devices}
                 floorPlans={floorPlans}
+                activeProject={activeProject}
                 selectedCategory={selectedBoqCategory}
                 onSelectCategory={setSelectedBoqCategory}
                 onAddModel={handleAddBoqModel}
@@ -345,6 +407,8 @@ export default function App() {
                 onDeleteModel={handleDeleteBoqModel}
                 onBulkProvision={handleBulkProvision}
                 onBulkImport={handleBulkImportBoq}
+                onRestoreVersion={handleRestoreBoqVersion}
+                onCreateSnapshot={handleCreateBoqSnapshot}
                 onCreateDevice={handleCreateDevice}
                 onUpdateStatus={handleUpdateStatus}
                 onNavigateToMap={handleNavigateToMap}

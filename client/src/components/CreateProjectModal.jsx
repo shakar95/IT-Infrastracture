@@ -184,3 +184,4 @@ export default function CreateProjectModal({ isOpen, onClose, onCreateProject, l
     </div>
   );
 }
+

@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { supabase, isSupabaseConfigured } from '../config/supabase.js';
-import { mockBoqModels, mockDevices, mockCategories } from '../services/mockData.js';
+import { mockBoqModels, mockDevices, mockCategories, mockBoqVersions } from '../services/mockData.js';
 
 const router = express.Router();
 
@@ -10,43 +10,47 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// GET all BOQ models with provisioned counts
+// GET all BOQ models with provisioned counts (Scoped to project_id)
 router.get('/', async (req, res) => {
   try {
-    if (isSupabaseConfigured) {
-      const { data: models, error } = await supabase
-        .from('boq_models')
-        .select('*, categories(*)');
-      if (error) throw error;
+    const targetProject = req.query.project_id || 'proj-sitak';
 
-      const { data: devices } = await supabase.from('devices').select('id, boq_model_id');
-      const enhanced = models.map((m) => ({
-        ...m,
-        provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
-      }));
-      return res.json(enhanced);
+    if (isSupabaseConfigured) {
+      let query = supabase.from('boq_models').select('*, categories(*)');
+      const { data: models, error } = await query;
+      if (!error && models) {
+        const { data: devices } = await supabase.from('devices').select('id, boq_model_id');
+        const enhanced = models.map((m) => ({
+          ...m,
+          provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
+        }));
+        return res.json(enhanced);
+      }
     }
 
-    // In-memory fallback
-    const enriched = mockBoqModels.map((m) => {
-      const cat = mockCategories.find((c) => c.id === m.category_id);
-      const provCount = mockDevices.filter((d) => d.boq_model_id === m.id).length;
-      return {
-        ...m,
-        category: cat,
-        provisioned_count: provCount,
-      };
-    });
+    // In-memory fallback - Strictly filter by project_id
+    const enriched = mockBoqModels
+      .filter((m) => (m.project_id || 'proj-sitak') === targetProject)
+      .map((m) => {
+        const cat = mockCategories.find((c) => c.id === m.category_id);
+        const provCount = mockDevices.filter((d) => d.boq_model_id === m.id).length;
+        return {
+          ...m,
+          category: cat,
+          provisioned_count: provCount,
+        };
+      });
     res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST create new BOQ model
+// POST create new BOQ model (Scoped to project_id)
 router.post('/', async (req, res) => {
   try {
     const {
+      project_id = 'proj-sitak',
       category_id,
       brand,
       model,
@@ -66,9 +70,10 @@ router.post('/', async (req, res) => {
     }
 
     const payload = {
+      project_id,
       category_id,
-      brand,
-      model,
+      brand: brand.trim(),
+      model: model.trim(),
       description: description || '',
       total_qty: Number(total_qty) || 1,
       unit_cost: Number(unit_cost) || 0,
@@ -82,13 +87,12 @@ router.post('/', async (req, res) => {
 
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.from('boq_models').insert([payload]).select('*, categories(*)').single();
-      if (error) throw error;
-      return res.status(201).json(data);
+      if (!error && data) return res.status(201).json(data);
     }
 
     const newModel = {
       ...payload,
-      id: `boq-${Date.now()}`,
+      id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       created_at: new Date().toISOString(),
     };
 
@@ -99,63 +103,314 @@ router.post('/', async (req, res) => {
   }
 });
 
-// POST /api/boq/batch - Bulk import BOQ items from Excel
+// POST /api/boq/batch - Smart Bulk import with deduplication, field update, skip & auto-versioning
 router.post('/batch', async (req, res) => {
   try {
-    const { items = [] } = req.body;
+    const { items = [], project_id = 'proj-sitak' } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'No items provided for batch import' });
     }
 
     const defaultImg = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
 
-    const prepared = items.map((item) => ({
-      category_id: item.category_id,
-      brand: (item.brand || 'Generic').trim(),
-      model: (item.model || `MOD-${Math.floor(1000 + Math.random() * 9000)}`).trim(),
-      description: item.description || '',
-      total_qty: Math.max(1, Number(item.total_qty) || 1),
-      unit_cost: Number(item.unit_cost) || 0,
-      product_image_url: item.product_image_url || defaultImg,
-      manual_pdf_url: item.manual_pdf_url || null,
-      allowed_zones: Array.isArray(item.allowed_zones) && item.allowed_zones.length > 0 ? item.allowed_zones : ['indoor'],
-      is_rack_mounted: Boolean(item.is_rack_mounted),
-      rack_unit_size: Number(item.rack_unit_size) || 0,
-      custom_specs: item.custom_specs || {},
-    }));
+    // Current models belonging to this project
+    const currentProjectModels = mockBoqModels.filter(
+      (m) => (m.project_id || 'proj-sitak') === project_id
+    );
 
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('boq_models')
-        .upsert(prepared, { onConflict: 'brand,model' })
-        .select('*, categories(*)');
-
-      if (error) {
-        console.error('Supabase BOQ batch error:', error);
-        throw error;
-      }
-      return res.status(201).json(data);
-    }
-
-    // In-memory fallback
     const added = [];
-    for (const p of prepared) {
-      const existingIdx = mockBoqModels.findIndex(
-        (m) => m.brand.toLowerCase() === p.brand.toLowerCase() && m.model.toLowerCase() === p.model.toLowerCase()
+    const updated = [];
+    const skipped = [];
+    const changeDetails = [];
+
+    for (const rawItem of items) {
+      const brand = (rawItem.brand || 'Generic').trim();
+      const model = (rawItem.model || `MOD-${Math.floor(1000 + Math.random() * 9000)}`).trim();
+      const normModel = model.toLowerCase();
+      const normBrand = brand.toLowerCase();
+
+      // Find existing model strictly in THIS project
+      const existing = currentProjectModels.find(
+        (m) =>
+          m.model.trim().toLowerCase() === normModel ||
+          (m.brand.trim().toLowerCase() === normBrand && m.model.trim().toLowerCase() === normModel)
       );
-      if (existingIdx !== -1) {
-        mockBoqModels[existingIdx] = { ...mockBoqModels[existingIdx], ...p, updated_at: new Date().toISOString() };
-        added.push(mockBoqModels[existingIdx]);
+
+      const targetQty = Math.max(1, Number(rawItem.total_qty) || 1);
+      const targetUnitCost = Number(rawItem.unit_cost) || 0;
+      const targetDesc = (rawItem.description || '').trim();
+      const targetCategory = rawItem.category_id || (existing ? existing.category_id : null);
+      const targetZone = Array.isArray(rawItem.allowed_zones) && rawItem.allowed_zones.length > 0
+        ? rawItem.allowed_zones
+        : [rawItem.placement_zone || 'indoor'];
+      const targetIsRack = Boolean(rawItem.is_rack_mounted);
+      const targetRackSize = Number(rawItem.rack_unit_size) || 0;
+      const targetImg = rawItem.product_image_url || defaultImg;
+
+      if (!existing) {
+        // Case 1: Model does NOT exist -> ADD
+        const newModel = {
+          id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          project_id,
+          brand,
+          model,
+          category_id: targetCategory,
+          description: targetDesc,
+          total_qty: targetQty,
+          unit_cost: targetUnitCost,
+          product_image_url: targetImg,
+          manual_pdf_url: rawItem.manual_pdf_url || null,
+          allowed_zones: targetZone,
+          is_rack_mounted: targetIsRack,
+          rack_unit_size: targetRackSize,
+          custom_specs: rawItem.custom_specs || {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        mockBoqModels.push(newModel);
+        currentProjectModels.push(newModel);
+        added.push(newModel);
+        changeDetails.push({
+          type: 'added',
+          brand,
+          model,
+          details: `Added new model (Qty: ${targetQty}, Cost: $${targetUnitCost})`,
+        });
       } else {
-        const newM = { ...p, id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, created_at: new Date().toISOString() };
-        mockBoqModels.push(newM);
-        added.push(newM);
+        // Case 2: Model exists -> Compare fields
+        const diffs = [];
+        if (Number(existing.total_qty) !== targetQty) {
+          diffs.push({ field: 'total_qty', label: 'Qty', oldVal: existing.total_qty, newVal: targetQty });
+        }
+        if (Number(existing.unit_cost) !== targetUnitCost) {
+          diffs.push({ field: 'unit_cost', label: 'Unit Cost', oldVal: existing.unit_cost, newVal: targetUnitCost });
+        }
+        if ((existing.description || '').trim() !== targetDesc && targetDesc) {
+          diffs.push({ field: 'description', label: 'Description', oldVal: existing.description, newVal: targetDesc });
+        }
+        if (targetCategory && existing.category_id !== targetCategory) {
+          diffs.push({ field: 'category_id', label: 'Category', oldVal: existing.category_id, newVal: targetCategory });
+        }
+        if (Boolean(existing.is_rack_mounted) !== targetIsRack) {
+          diffs.push({ field: 'is_rack_mounted', label: 'Rack Mount', oldVal: existing.is_rack_mounted, newVal: targetIsRack });
+        }
+        if (Number(existing.rack_unit_size) !== targetRackSize) {
+          diffs.push({ field: 'rack_unit_size', label: 'Rack Size', oldVal: existing.rack_unit_size, newVal: targetRackSize });
+        }
+
+        if (diffs.length > 0) {
+          // Fields differ -> UPDATE
+          const idx = mockBoqModels.findIndex((m) => m.id === existing.id);
+          const updatedModel = {
+            ...existing,
+            description: targetDesc || existing.description,
+            total_qty: targetQty,
+            unit_cost: targetUnitCost,
+            category_id: targetCategory || existing.category_id,
+            allowed_zones: targetZone,
+            is_rack_mounted: targetIsRack,
+            rack_unit_size: targetRackSize,
+            product_image_url: rawItem.product_image_url || existing.product_image_url,
+            updated_at: new Date().toISOString(),
+          };
+
+          if (idx !== -1) {
+            mockBoqModels[idx] = updatedModel;
+          }
+          updated.push({
+            ...updatedModel,
+            diffs,
+          });
+          changeDetails.push({
+            type: 'updated',
+            brand,
+            model,
+            diffs,
+            details: diffs.map((d) => `${d.label}: ${d.oldVal} ➔ ${d.newVal}`).join(', '),
+          });
+        } else {
+          // No changes -> SKIP (no duplicate)
+          skipped.push(existing);
+        }
       }
     }
 
-    res.status(201).json(added);
+    // Generate BOQ Version Snapshot if changes occurred
+    let createdVersion = null;
+    if (added.length > 0 || updated.length > 0) {
+      const existingProjectVersions = mockBoqVersions.filter((v) => v.project_id === project_id);
+      const nextVerNum = `v1.${existingProjectVersions.length}`;
+      const finalProjectModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+
+      createdVersion = {
+        id: `ver-${Date.now()}`,
+        project_id,
+        version_number: nextVerNum,
+        title: `Excel BOQ Import (${nextVerNum})`,
+        title_ku: `هاوردەکردنی ئێکسڵ (${nextVerNum})`,
+        summary: `${added.length} Added, ${updated.length} Updated, ${skipped.length} Skipped`,
+        summary_ku: `${added.length} زیادکراو، ${updated.length} نوێکراوە، ${skipped.length} بێ گۆڕانکاری`,
+        author: 'System (Excel Import)',
+        created_at: new Date().toISOString(),
+        item_count: finalProjectModels.length,
+        total_value: finalProjectModels.reduce((acc, m) => acc + (m.total_qty || 0) * (m.unit_cost || 0), 0),
+        changes: {
+          added_count: added.length,
+          updated_count: updated.length,
+          skipped_count: skipped.length,
+          details: changeDetails,
+        },
+        items_snapshot: JSON.parse(JSON.stringify(finalProjectModels)),
+      };
+
+      mockBoqVersions.unshift(createdVersion);
+    }
+
+    const finalModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+    return res.status(201).json({
+      success: true,
+      models: finalModels,
+      report: {
+        total_processed: items.length,
+        added_count: added.length,
+        updated_count: updated.length,
+        skipped_count: skipped.length,
+        added,
+        updated,
+        skipped,
+      },
+      version: createdVersion,
+    });
   } catch (err) {
-    console.error('Error in BOQ batch import:', err);
+    console.error('Error in smart BOQ batch import:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/boq/versions - Get all version snapshots for a project
+router.get('/versions', async (req, res) => {
+  try {
+    const { project_id = 'proj-sitak' } = req.query;
+    const versions = mockBoqVersions
+      .filter((v) => (v.project_id || 'proj-sitak') === project_id)
+      .map((v) => ({
+        id: v.id,
+        project_id: v.project_id,
+        version_number: v.version_number,
+        title: v.title,
+        title_ku: v.title_ku,
+        summary: v.summary,
+        summary_ku: v.summary_ku,
+        author: v.author,
+        created_at: v.created_at,
+        item_count: v.item_count,
+        total_value: v.total_value,
+        changes: v.changes,
+        // snapshot items provided for comparison & restore
+        items_snapshot: v.items_snapshot,
+      }));
+    res.json(versions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/boq/versions/snapshot - Manually create a version checkpoint
+router.post('/versions/snapshot', async (req, res) => {
+  try {
+    const { project_id = 'proj-sitak', title, title_ku, summary, summary_ku } = req.body;
+    const projectModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+    const existingProjectVersions = mockBoqVersions.filter((v) => v.project_id === project_id);
+    const nextVerNum = `v1.${existingProjectVersions.length}`;
+
+    const newVersion = {
+      id: `ver-${Date.now()}`,
+      project_id,
+      version_number: nextVerNum,
+      title: title || `Manual Snapshot (${nextVerNum})`,
+      title_ku: title_ku || `ڤێرژنی دەستی (${nextVerNum})`,
+      summary: summary || `Saved snapshot of ${projectModels.length} models`,
+      summary_ku: summary_ku || `وەرگرتنی ڤێرژنی ${projectModels.length} مۆدێل`,
+      author: 'Engineer',
+      created_at: new Date().toISOString(),
+      item_count: projectModels.length,
+      total_value: projectModels.reduce((acc, m) => acc + (m.total_qty || 0) * (m.unit_cost || 0), 0),
+      changes: {
+        added_count: 0,
+        updated_count: 0,
+        skipped_count: projectModels.length,
+        details: [`Manual snapshot taken at ${new Date().toLocaleTimeString()}`],
+      },
+      items_snapshot: JSON.parse(JSON.stringify(projectModels)),
+    };
+
+    mockBoqVersions.unshift(newVersion);
+    res.status(201).json(newVersion);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/boq/versions/:id/restore - Restore BOQ to a specific version snapshot
+router.post('/versions/:id/restore', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { project_id = 'proj-sitak' } = req.body;
+
+    const targetVersion = mockBoqVersions.find((v) => v.id === id && (v.project_id || 'proj-sitak') === project_id);
+    if (!targetVersion) {
+      return res.status(404).json({ error: 'BOQ version not found' });
+    }
+
+    // Remove existing items for this project
+    for (let i = mockBoqModels.length - 1; i >= 0; i--) {
+      if ((mockBoqModels[i].project_id || 'proj-sitak') === project_id) {
+        mockBoqModels.splice(i, 1);
+      }
+    }
+
+    // Restore items from snapshot
+    const restoredItems = JSON.parse(JSON.stringify(targetVersion.items_snapshot));
+    restoredItems.forEach((it) => {
+      mockBoqModels.push({
+        ...it,
+        project_id,
+        restored_at: new Date().toISOString(),
+      });
+    });
+
+    // Create a rollback audit version so history is never lost
+    const existingProjectVersions = mockBoqVersions.filter((v) => v.project_id === project_id);
+    const rollbackVerNum = `v1.${existingProjectVersions.length}`;
+    const rollbackVersion = {
+      id: `ver-${Date.now()}`,
+      project_id,
+      version_number: rollbackVerNum,
+      title: `Rollback to ${targetVersion.version_number}`,
+      title_ku: `گەڕاندنەوە بۆ ${targetVersion.version_number}`,
+      summary: `Restored BOQ catalog to state of ${targetVersion.version_number}`,
+      summary_ku: `گەڕاندنەوەی کەتەلۆگ بۆ دۆخی ${targetVersion.version_number}`,
+      author: 'System (Rollback)',
+      created_at: new Date().toISOString(),
+      item_count: restoredItems.length,
+      total_value: restoredItems.reduce((acc, m) => acc + (m.total_qty || 0) * (m.unit_cost || 0), 0),
+      changes: {
+        rollback_from: targetVersion.version_number,
+        details: [`Restored catalog from snapshot ${targetVersion.version_number}`],
+      },
+      items_snapshot: JSON.parse(JSON.stringify(restoredItems)),
+    };
+
+    mockBoqVersions.unshift(rollbackVersion);
+
+    res.json({
+      success: true,
+      message: `Successfully restored BOQ to version ${targetVersion.version_number}`,
+      models: restoredItems,
+      version: rollbackVersion,
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

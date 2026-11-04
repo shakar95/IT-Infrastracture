@@ -587,3 +587,43 @@ export const mockManualKnowledge = [
   },
 ];
 
+// Ensure initial seed data is strictly scoped to the primary Sitak Villa project
+mockBoqModels.forEach((m) => {
+  if (!m.project_id) m.project_id = 'proj-sitak';
+});
+mockDevices.forEach((d) => {
+  if (!d.project_id) d.project_id = 'proj-sitak';
+});
+mockFloorPlans.forEach((fp) => {
+  if (!fp.project_id) fp.project_id = 'proj-sitak';
+});
+
+// Initial Baseline Version for Sitak Villa
+export let mockBoqVersions = [
+  {
+    id: 'ver-sitak-initial',
+    project_id: 'proj-sitak',
+    version_number: 'v1.0',
+    title: 'Baseline Sitak Villa BOQ Catalog',
+    title_ku: 'کەتەلۆگی سەرەتایی بنەڕەتی ڤێلای سیتەک',
+    summary: 'Initial baseline engineering catalog with 41 hardware models',
+    summary_ku: 'کەتەلۆگی سەرەتایی ٤١ مۆدێلی کەرەستە و ئامێر',
+    author: 'Chief ELV Engineer',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    item_count: mockBoqModels.filter((m) => m.project_id === 'proj-sitak').length,
+    total_value: mockBoqModels
+      .filter((m) => m.project_id === 'proj-sitak')
+      .reduce((acc, m) => acc + (m.total_qty || 0) * (m.unit_cost || 0), 0),
+    changes: {
+      added_count: mockBoqModels.filter((m) => m.project_id === 'proj-sitak').length,
+      updated_count: 0,
+      skipped_count: 0,
+      details: ['Baseline BOQ catalog loaded'],
+    },
+    items_snapshot: JSON.parse(
+      JSON.stringify(mockBoqModels.filter((m) => m.project_id === 'proj-sitak'))
+    ),
+  },
+];
+
+

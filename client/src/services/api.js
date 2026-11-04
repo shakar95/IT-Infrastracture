@@ -48,8 +48,9 @@ export const api = {
   },
 
   // BOQ Models
-  async getBoqModels() {
-    return handleResponse(await fetch(`${API_BASE}/boq`));
+  async getBoqModels(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return handleResponse(await fetch(`${API_BASE}/boq${query ? `?${query}` : ''}`));
   },
   async createBoqModel(model) {
     return handleResponse(await fetch(`${API_BASE}/boq`, {
@@ -93,11 +94,31 @@ export const api = {
       body: JSON.stringify(params),
     }));
   },
-  async bulkImportBoqModels(items) {
+  async bulkImportBoqModels(items, projectId = 'proj-sitak') {
     return handleResponse(await fetch(`${API_BASE}/boq/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ items, project_id: projectId }),
+    }));
+  },
+
+  // BOQ Versions & History Snapshots
+  async getBoqVersions(projectId = 'proj-sitak') {
+    const query = projectId ? `?project_id=${projectId}` : '';
+    return handleResponse(await fetch(`${API_BASE}/boq/versions${query}`));
+  },
+  async createBoqSnapshot(projectId, data = {}) {
+    return handleResponse(await fetch(`${API_BASE}/boq/versions/snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId, ...data }),
+    }));
+  },
+  async restoreBoqVersion(versionId, projectId = 'proj-sitak') {
+    return handleResponse(await fetch(`${API_BASE}/boq/versions/${versionId}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId }),
     }));
   },
 
@@ -144,8 +165,9 @@ export const api = {
   },
 
   // Maps / Floor Plans
-  async getMaps() {
-    return handleResponse(await fetch(`${API_BASE}/maps`));
+  async getMaps(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return handleResponse(await fetch(`${API_BASE}/maps${query ? `?${query}` : ''}`));
   },
   async getMapDevices(mapId) {
     return handleResponse(await fetch(`${API_BASE}/maps/${mapId}/devices`));

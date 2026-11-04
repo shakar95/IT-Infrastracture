@@ -10,15 +10,19 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB for large floor plan blueprints
 });
 
-// GET all floor plans
+// GET all floor plans (Scoped to project_id)
 router.get('/', async (req, res) => {
   try {
+    const targetProject = req.query.project_id || 'proj-sitak';
+
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.from('floor_plans').select('*').order('floor_level');
-      if (error) throw error;
-      return res.json(data);
+      if (!error && data) return res.json(data);
     }
-    res.json(mockFloorPlans);
+
+    // In-memory filter - Strictly scoped to targetProject
+    const filtered = mockFloorPlans.filter((fp) => (fp.project_id || 'proj-sitak') === targetProject);
+    res.json(filtered);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -152,6 +156,7 @@ router.post('/', async (req, res) => {
     }
 
     const planPayload = {
+      project_id: req.body.project_id || 'proj-sitak',
       name,
       name_ku: name_ku || name,
       zone_type,
