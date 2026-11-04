@@ -239,6 +239,50 @@ export default function App() {
     loadProjectScopedData(project.id);
   };
 
+  const handleDeleteProject = async (projectId) => {
+    const targetProj = projects.find((p) => p.id === projectId);
+    const projName = targetProj
+      ? (lang === 'ku' ? (targetProj.name_ku || targetProj.name) : targetProj.name)
+      : 'this project';
+
+    const confirmMsg = lang === 'ku'
+      ? `ئایا دڵنیایت لە سڕینەوەی تەواوەتی پڕۆژەی "${projName}"؟\nئاگاداربە: هەموو کەتەلۆگی BOQ، دیڤایسە تۆمارکراوەکان، و نەخشەکانی ئەم پڕۆژەیە بە یەکجاری دەسڕێنەوە!`
+      : `Are you sure you want to completely delete "${projName}"?\nWarning: All BOQ items, provisioned devices, and floor plans for this site will be permanently deleted!`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setIsLoading(true);
+      await api.deleteProject(projectId);
+      const remainingProjects = projects.filter((p) => p.id !== projectId);
+
+      if (remainingProjects.length === 0) {
+        // If all projects were deleted, recreate the baseline default Sitak Villa project
+        const defaultProj = {
+          id: 'proj-sitak',
+          name: 'Iraq Sitak Villa Project',
+          name_ku: 'پرۆژەی نایابی ڤێلای سیتەک',
+          location: 'Sitak, Sulaymaniyah, KRI',
+          location_ku: 'سیتەک، سلێمانی',
+          client_name: 'VIP Mountain Estate',
+        };
+        setProjects([defaultProj]);
+        setActiveProject(defaultProj);
+        await loadProjectScopedData(defaultProj.id);
+      } else {
+        setProjects(remainingProjects);
+        if (activeProject?.id === projectId) {
+          setActiveProject(remainingProjects[0]);
+          await loadProjectScopedData(remainingProjects[0].id);
+        }
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to delete project');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Device Actions
   const handleCreateDevice = async (deviceData) => {
     try {
@@ -323,7 +367,10 @@ export default function App() {
   // Floor Plan Actions
   const handleCreateFloorPlan = async (planData) => {
     try {
-      const created = await api.createFloorPlan(planData);
+      const created = await api.createFloorPlan({
+        ...planData,
+        project_id: planData.project_id || activeProject?.id || 'proj-sitak',
+      });
       setFloorPlans((prev) => [...prev, created]);
       return created;
     } catch (err) {
@@ -370,6 +417,7 @@ export default function App() {
         activeProject={activeProject}
         onSwitchProject={handleSwitchProject}
         onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+        onDeleteProject={handleDeleteProject}
       />
 
       {/* Main Content Area */}

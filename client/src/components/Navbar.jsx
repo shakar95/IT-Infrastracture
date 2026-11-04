@@ -14,6 +14,7 @@ import {
   Plus,
   Check,
   MapPin,
+  Trash2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 
@@ -26,6 +27,7 @@ export default function Navbar({
   activeProject = null,
   onSwitchProject,
   onOpenCreateProject,
+  onDeleteProject,
 }) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
@@ -107,34 +109,61 @@ export default function Navbar({
                     <span className="text-blue-400 font-mono text-[10px]">{projects.length} {isKu ? 'سایت' : 'Sites'}</span>
                   </div>
 
-                  <div className="max-h-60 overflow-y-auto py-1 space-y-1">
+                  <div className="max-h-64 overflow-y-auto py-1 space-y-1">
                     {projects.map((proj) => {
                       const isSelected = activeProject?.id === proj.id;
                       const pName = isKu ? (proj.name_ku || proj.name) : proj.name;
                       const pLoc = isKu ? (proj.location_ku || proj.location) : proj.location;
 
                       return (
-                        <button
+                        <div
                           key={proj.id}
-                          onClick={() => {
-                            if (onSwitchProject) onSwitchProject(proj);
-                            setIsProjectDropdownOpen(false);
-                          }}
-                          className={`w-full text-left p-2.5 rounded-xl transition flex items-center justify-between ${
+                          className={`w-full group p-2 rounded-xl transition flex items-center justify-between gap-1.5 ${
                             isSelected
                               ? 'bg-blue-600/15 border border-blue-500/30 text-white'
                               : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
                           }`}
                         >
-                          <div className="truncate">
-                            <span className="font-semibold text-xs block truncate">{pName}</span>
-                            <span className="text-[10px] text-slate-400 flex items-center gap-1 truncate mt-0.5">
-                              <MapPin className="w-3 h-3 text-amber-400/80 shrink-0" />
-                              {pLoc}
-                            </span>
-                          </div>
-                          {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0" />}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onSwitchProject) onSwitchProject(proj);
+                              setIsProjectDropdownOpen(false);
+                            }}
+                            className="flex-1 text-left truncate flex items-center justify-between"
+                          >
+                            <div className="truncate pr-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-xs truncate">{pName}</span>
+                                {isSelected && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-500/20 text-blue-400 font-mono shrink-0">
+                                    {isKu ? 'چالاک' : 'Active'}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 flex items-center gap-1 truncate mt-0.5">
+                                <MapPin className="w-3 h-3 text-amber-400/80 shrink-0" />
+                                {pLoc}
+                              </span>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0 mx-1" />}
+                          </button>
+
+                          {/* Delete Project / Site Button */}
+                          {onDeleteProject && (
+                            <button
+                              type="button"
+                              title={isKu ? 'سڕینەوەی ئەم سایتە بە تەواوی' : 'Delete this project / site completely'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteProject(proj.id);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition opacity-80 sm:opacity-0 sm:group-hover:opacity-100 shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

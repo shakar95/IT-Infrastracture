@@ -1,10 +1,49 @@
 import React, { useState } from 'react';
-import { X, Upload, Camera, MapPin, Layers, Check, Image as ImageIcon } from 'lucide-react';
+import {
+  X,
+  Upload,
+  Camera,
+  MapPin,
+  Layers,
+  Check,
+  Image as ImageIcon,
+  FileText,
+  FileCode,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+} from 'lucide-react';
 import { api } from '../services/api';
 
-const compressImageFile = (file, maxWidth = 2000, maxHeight = 1500, quality = 0.85) => {
+// Helper to ensure PDF.js is loaded
+const ensurePdfJs = async () => {
+  if (window.pdfjsLib) {
+    if (!window.pdfjsLib.GlobalWorkerOptions?.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    return window.pdfjsLib;
+  }
   return new Promise((resolve, reject) => {
-    if (!file || !file.type.startsWith('image/')) return reject(new Error('Invalid image'));
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      } else {
+        reject(new Error('PDF.js not loaded'));
+      }
+    };
+    script.onerror = () => reject(new Error('Failed to load PDF vector engine'));
+    document.head.appendChild(script);
+  });
+};
+
+const compressImageFile = (file, maxWidth = 2400, maxHeight = 1800, quality = 0.88) => {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error('Invalid image'));
     const reader = new FileReader();
     reader.onerror = reject;
     reader.onload = (e) => {
@@ -25,6 +64,8 @@ const compressImageFile = (file, maxWidth = 2000, maxHeight = 1500, quality = 0.
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
@@ -52,29 +93,135 @@ export default function AddFloorPlanModal({
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // PDF Blueprint State
+  const [loadedPdfDoc, setLoadedPdfDoc] = useState(null);
+  const [pdfPageNumber, setPdfPageNumber] = useState(1);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
+  const [fileMeta, setFileMeta] = useState(null); // { name, type, size }
+  const [dwgNotice, setDwgNotice] = useState(false);
+
   if (!isOpen) return null;
+
+  // Render a specific page of the loaded PDF
+  const renderPdfPage = async (pdfDoc, pageNum) => {
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      // High-resolution scale for sharp blueprint vector lines
+      const viewport = page.getViewport({ scale: 2.2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(3600, viewport.width);
+      canvas.height = Math.min(3600, viewport.height);
+      const ctx = canvas.getContext('2d');
+
+      // White architectural background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+      }).promise;
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      return dataUrl;
+    } catch (err) {
+      console.error('Error rendering PDF page:', err);
+      throw err;
+    }
+  };
+
+  const handlePdfPageChange = async (newPage) => {
+    if (!loadedPdfDoc || newPage < 1 || newPage > pdfTotalPages) return;
+    try {
+      setIsUploading(true);
+      setPdfPageNumber(newPage);
+      const dataUrl = await renderPdfPage(loadedPdfDoc, newPage);
+      setImagePreview(dataUrl);
+
+      // Upload page preview to Supabase storage or keep dataURL
+      try {
+        const res = await api.uploadFloorPlanImage(dataUrl);
+        if (res?.publicUrl) setImageUrl(res.publicUrl);
+        else setImageUrl(dataUrl);
+      } catch {
+        setImageUrl(dataUrl);
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to switch PDF blueprint page');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleFileSelect = async (file) => {
     if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+
+    // Check for AutoCAD DWG files
+    if (lowerName.endsWith('.dwg') || lowerName.endsWith('.dxf')) {
+      setDwgNotice(true);
+      return;
+    }
+    setDwgNotice(false);
+
     try {
       setIsUploading(true);
-      const compressedDataUrl = await compressImageFile(file, 2000, 1500, 0.85);
-      setImagePreview(compressedDataUrl);
 
-      // Upload directly into Supabase Storage Bucket ('floor-plans' / 'boq-images')
-      try {
-        const res = await api.uploadFloorPlanImage(compressedDataUrl);
-        if (res?.publicUrl) {
-          setImageUrl(res.publicUrl);
-        } else {
+      // Auto-suggest plan name from file name if empty
+      const cleanFileName = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]/g, ' ')
+        .trim();
+
+      if (!name) setName(cleanFileName);
+      if (!nameKu) setNameKu(cleanFileName);
+
+      setFileMeta({
+        name: file.name,
+        type: lowerName.endsWith('.pdf') ? 'pdf' : 'image',
+        size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+      });
+
+      // Handle PDF Blueprint Files
+      if (file.type === 'application/pdf' || lowerName.endsWith('.pdf')) {
+        const pdfLib = await ensurePdfJs();
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfLib.getDocument({ data: arrayBuffer });
+        const pdfDoc = await loadingTask.promise;
+
+        setLoadedPdfDoc(pdfDoc);
+        setPdfTotalPages(pdfDoc.numPages);
+        setPdfPageNumber(1);
+
+        const renderedDataUrl = await renderPdfPage(pdfDoc, 1);
+        setImagePreview(renderedDataUrl);
+
+        try {
+          const res = await api.uploadFloorPlanImage(renderedDataUrl);
+          if (res?.publicUrl) setImageUrl(res.publicUrl);
+          else setImageUrl(renderedDataUrl);
+        } catch {
+          setImageUrl(renderedDataUrl);
+        }
+      } else {
+        // Standard Image File (.png, .jpg, .svg, .webp)
+        setLoadedPdfDoc(null);
+        setPdfTotalPages(0);
+        const compressedDataUrl = await compressImageFile(file, 2400, 1800, 0.88);
+        setImagePreview(compressedDataUrl);
+
+        try {
+          const res = await api.uploadFloorPlanImage(compressedDataUrl);
+          if (res?.publicUrl) setImageUrl(res.publicUrl);
+          else setImageUrl(compressedDataUrl);
+        } catch {
           setImageUrl(compressedDataUrl);
         }
-      } catch (uploadErr) {
-        console.warn('Bucket upload blip, using compressed data URL:', uploadErr);
-        setImageUrl(compressedDataUrl);
       }
     } catch (err) {
-      alert(err.message || 'Failed to process image');
+      console.error('Failed to process blueprint file:', err);
+      alert(err.message || 'Failed to process blueprint file');
     } finally {
       setIsUploading(false);
     }
@@ -87,7 +234,7 @@ export default function AddFloorPlanModal({
       return;
     }
     if (!imageUrl && !imagePreview) {
-      alert(isKu ? 'تکایە وێنەی سایت پلانەکە ئەپلۆد بکە' : 'Please upload the Site Plan blueprint image');
+      alert(isKu ? 'تکایە وێنەی سایت پلانەکە یان فایلی PDF ئەپلۆد بکە' : 'Please upload the Site Plan blueprint image or PDF');
       return;
     }
 
@@ -134,12 +281,12 @@ export default function AddFloorPlanModal({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-white">
-                {isKu ? 'زیادکردنی سایت پلان و نەخشەی ئەندازیاری' : 'Add Site Plan / Floor Plan Blueprint'}
+                {isKu ? 'زیادکردنی نەخشە و پلانی ئەندازیاری (PDF / وێنە)' : 'Add Architectural Blueprint (PDF / Image)'}
               </h3>
               <p className="text-xs text-slate-400">
                 {isKu
-                  ? 'دانانی نەخشە بۆ دیاریکردنی شوێنی دیڤایسەکان بە شێوەی ڕاستەوخۆ'
-                  : 'Upload architectural layout to mark and pin device locations visually'}
+                  ? 'فایلی PDF ی کوالیتی بەرز یان وێنە ئەپلۆد بکە بۆ جێگیرکردنی دیڤایسەکان بە کلیک'
+                  : 'Upload high-DPI PDF drawings or images with instant click-to-place pin'}
               </p>
             </div>
           </div>
@@ -151,60 +298,119 @@ export default function AddFloorPlanModal({
           </button>
         </div>
 
+        {/* DWG Format Notice Modal/Callout */}
+        {dwgNotice && (
+          <div className="p-3.5 bg-amber-500/15 border border-amber-500/30 rounded-2xl text-xs space-y-1.5 animate-fadeIn">
+            <div className="flex items-center gap-2 text-amber-300 font-bold">
+              <Info className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>{isKu ? 'ڕێنمایی بۆ فایلی AutoCAD DWG' : 'How to use AutoCAD DWG Blueprints'}</span>
+            </div>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              {isKu
+                ? 'فایلی DWG کۆدێکی باینەری کۆمپانیای Autodesk ە و لە براوسەردا بەبێ سێرڤەری گرانبەها ڕاستەوخۆ کار ناکات. تکایە لە نێو بەرنامەی AutoCAD فەرمانی Plot / Export to PDF بدە و فایلی PDF ـەکە لێرە ئەپڵۆد بکە بە کوالیتییەکی نایاب.'
+                : 'DWG is a closed proprietary Autodesk binary CAD format. In AutoCAD or Revit, choose Plot / Export to PDF and upload the resulting vector PDF file here for crystal-clear interactive rendering.'}
+            </p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Blueprint Image Upload Box */}
+          {/* Blueprint Image / PDF Upload Box */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              {isKu ? 'وێنەی سایت پلان / نەخشەی ڤێلا (Blueprint Image)' : 'Blueprint Image / Architectural Plan'}
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">
+                {isKu ? 'فایلی نەخشە (PDF ی ئەندازیاری یان وێنەی ڕوون)' : 'Blueprint Layout (Architectural PDF or Image)'}
+              </label>
+              {fileMeta && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">
+                  {fileMeta.type.toUpperCase()} • {fileMeta.size}
+                </span>
+              )}
+            </div>
+
             <div className="relative border-2 border-dashed border-slate-700 hover:border-blue-500/70 rounded-2xl p-4 bg-slate-950/70 transition flex flex-col items-center justify-center text-center min-h-[170px] overflow-hidden">
               {imagePreview ? (
-                <div className="relative w-full">
-                  <img
-                    src={imagePreview}
-                    alt="Floor plan preview"
-                    className="w-full max-h-[220px] object-contain rounded-xl mx-auto"
-                  />
-                  <div className="absolute top-2 right-2 flex items-center gap-2">
+                <div className="relative w-full space-y-2">
+                  <div className="relative max-h-[220px] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 flex items-center justify-center">
+                    <img
+                      src={imagePreview}
+                      alt="Blueprint preview"
+                      className="w-full max-h-[220px] object-contain rounded-xl mx-auto"
+                    />
+                  </div>
+
+                  {/* Multi-Page PDF Page Switcher */}
+                  {pdfTotalPages > 1 && (
+                    <div className="flex items-center justify-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        disabled={pdfPageNumber <= 1 || isUploading}
+                        onClick={() => handlePdfPageChange(pdfPageNumber - 1)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-40 flex items-center gap-1"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>{isKu ? 'لاپەڕەی پێشوو' : 'Prev'}</span>
+                      </button>
+
+                      <span className="text-xs font-mono text-blue-400 font-bold">
+                        {isKu ? `لاپەڕە ${pdfPageNumber} لە ${pdfTotalPages}` : `Sheet ${pdfPageNumber} of ${pdfTotalPages}`}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={pdfPageNumber >= pdfTotalPages || isUploading}
+                        onClick={() => handlePdfPageChange(pdfPageNumber + 1)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-40 flex items-center gap-1"
+                      >
+                        <span>{isKu ? 'لاپەڕەی دواتر' : 'Next'}</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-center gap-2 pt-1">
                     <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow transition">
-                      {isKu ? 'گۆڕین' : 'Change'}
+                      {isKu ? 'گۆڕینی فایل' : 'Change File'}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,application/pdf,.pdf,.dwg,.dxf"
                         className="hidden"
                         onChange={(e) => handleFileSelect(e.target.files?.[0])}
                       />
                     </label>
                   </div>
+
                   {isUploading && (
-                    <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center text-xs font-semibold text-blue-400">
-                      {isKu ? 'وێنەکە ئەپڵۆد دەبێت بۆ سۆپەبەیس...' : 'Uploading image to Supabase Storage...'}
+                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 text-xs font-semibold text-blue-400">
+                      <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      <span>{isKu ? 'ئامادەکردنی فایلی PDF و نەخشەکە بە کوالیتی بەرز...' : 'Processing high-DPI vector blueprint...'}</span>
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="space-y-3 py-3">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto text-blue-400">
-                    <ImageIcon className="w-6 h-6" />
+                  <div className="w-14 h-14 rounded-2xl bg-slate-800/80 flex items-center justify-center mx-auto text-blue-400 border border-slate-700/60 shadow-inner">
+                    <FileText className="w-7 h-7" />
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-slate-200">
-                      {isKu ? 'وێنەی نەخشەکە لێرە دابنێ یان لەسەر ئامێرەکەت هەڵیبژێرە' : 'Click to upload or take a photo of the layout'}
+                      {isKu ? 'فایلی PDF ی ئەندازیاری یان وێنەی نەخشە لێرە دابنێ' : 'Upload Architectural PDF Blueprint or High-Res Image'}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">PNG, JPG, WebP (بەکێتی floor-plans ی سۆپەبەیس)</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      PDF, PNG, JPG, WebP <span className="text-blue-400 font-mono">(Direct PDF Vector Rendering)</span>
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow transition active:scale-95">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/30 transition active:scale-95">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{isKu ? 'هەڵبژاردنی وێنە' : 'Upload Image'}</span>
+                      <span>{isKu ? 'هەڵبژاردنی PDF یان وێنە' : 'Choose PDF / Image'}</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,application/pdf,.pdf,.dwg,.dxf"
                         className="hidden"
                         onChange={(e) => handleFileSelect(e.target.files?.[0])}
                       />
                     </label>
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition active:scale-95">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition active:scale-95">
                       <Camera className="w-3.5 h-3.5 text-amber-400" />
                       <span>{isKu ? 'کامێرا' : 'Camera'}</span>
                       <input
@@ -231,7 +437,7 @@ export default function AddFloorPlanModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Garden & Outdoor Site Plan"
+                placeholder="e.g. Ground Floor MEP & ELV Layout"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -243,7 +449,7 @@ export default function AddFloorPlanModal({
                 type="text"
                 value={nameKu}
                 onChange={(e) => setNameKu(e.target.value)}
-                placeholder="وەک: نەخشەی باخچە و حەوشەی دەرەوە"
+                placeholder="وەک: نەخشەی قاتی زەمینی سیستەمی ELV"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
               />
             </div>

@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase, isSupabaseConfigured } from '../config/supabase.js';
+import { mockBoqModels, mockDevices, mockFloorPlans, mockBoqVersions } from '../services/mockData.js';
 
 const router = express.Router();
 
@@ -97,16 +98,46 @@ router.post('/', async (req, res) => {
   }
 });
 
-// DELETE project
+// DELETE project / site completely with all associated data
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
     if (isSupabaseConfigured) {
+      // Clean up child tables first
+      await supabase.from('devices').delete().eq('project_id', id);
+      await supabase.from('floor_plans').delete().eq('project_id', id);
+      await supabase.from('boq_models').delete().eq('project_id', id);
+      await supabase.from('boq_versions').delete().eq('project_id', id);
       await supabase.from('project_settings').delete().eq('id', id);
     }
+
     mockProjects = mockProjects.filter((p) => p.id !== id);
-    res.json({ success: true, message: 'Project removed' });
+
+    for (let i = mockDevices.length - 1; i >= 0; i--) {
+      if (mockDevices[i].project_id === id) {
+        mockDevices.splice(i, 1);
+      }
+    }
+    for (let i = mockFloorPlans.length - 1; i >= 0; i--) {
+      if (mockFloorPlans[i].project_id === id) {
+        mockFloorPlans.splice(i, 1);
+      }
+    }
+    for (let i = mockBoqModels.length - 1; i >= 0; i--) {
+      if (mockBoqModels[i].project_id === id) {
+        mockBoqModels.splice(i, 1);
+      }
+    }
+    for (let i = mockBoqVersions.length - 1; i >= 0; i--) {
+      if (mockBoqVersions[i].project_id === id) {
+        mockBoqVersions.splice(i, 1);
+      }
+    }
+
+    res.json({ success: true, message: 'Project and all associated data deleted successfully' });
   } catch (err) {
+    console.error('Error deleting project:', err);
     res.status(500).json({ error: err.message });
   }
 });
