@@ -119,15 +119,15 @@ export default function InteractiveMap({
   // Devices not yet placed on this floor plan
   const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
 
-  // 4. Auto-fit Callback (Guaranteed that viewportRef, planDimensions, setZoom, setPan are all ready)
+  // 4. Auto-fit Callback (Guaranteed that viewportRef, setZoom, setPan are ready)
   const autoFitBlueprint = useCallback((customWidth, customHeight) => {
     const vp = viewportRef.current;
     if (!vp) return;
     const vpWidth = vp.clientWidth || 800;
     const vpHeight = vp.clientHeight || 560;
 
-    const bWidth = customWidth || planDimensions.width || 2400;
-    const bHeight = customHeight || planDimensions.height || 1600;
+    const bWidth = customWidth || 2400;
+    const bHeight = customHeight || 1600;
 
     const pad = 48;
     const scaleX = (vpWidth - pad) / bWidth;
@@ -137,11 +137,11 @@ export default function InteractiveMap({
 
     setZoom(safeZoom);
     setPan({ x: 0, y: 0 });
-  }, [planDimensions]);
+  }, []);
 
   // Handle dimensions from BlueprintCanvas (high-DPI resolution, up to 5200px)
   const handleDimensionsReady = useCallback((w, h) => {
-    setPlanDimensions({ width: w, height: h });
+    setPlanDimensions((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
     if (lastFittedPlanIdRef.current !== activePlan?.id) {
       lastFittedPlanIdRef.current = activePlan?.id;
       autoFitBlueprint(w, h);

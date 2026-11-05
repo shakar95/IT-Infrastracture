@@ -205,7 +205,8 @@ export default function AddFloorPlanModal({
         setImagePreview(renderedDataUrl);
 
         try {
-          const res = await api.uploadFloorPlanImage(file);
+          // Upload the rendered 5400px lossless PNG so the browser loads it instantly at 60 FPS
+          const res = await api.uploadFloorPlanImage(renderedDataUrl);
           if (res?.publicUrl) setImageUrl(res.publicUrl);
           else setImageUrl(renderedDataUrl);
         } catch {
