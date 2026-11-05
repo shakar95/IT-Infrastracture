@@ -171,25 +171,31 @@ export default function InteractiveMap({
     img.src = activePlan.image_url;
   }, [activePlan?.id, activePlan?.image_url, autoFitBlueprint]);
 
-  // Non-passive wheel listener for silky smooth zoom without passive event listener error
-  useEffect(() => {
-    const vp = viewportRef.current;
-    if (!vp) return;
+  // Non-passive wheel handler: Smooth, guaranteed e.preventDefault() to stop page scroll, supports mouse & trackpad
+  const handleWheelZoom = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-    const onWheel = (e) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      setZoom((prevZoom) => {
-        const nextZoom = Math.max(0.12, Math.min(6.0, Number((prevZoom * zoomFactor).toFixed(2))));
-        return nextZoom;
-      });
-    };
+    const delta = e.deltaY;
+    if (Math.abs(delta) < 0.05) return;
 
-    vp.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      vp.removeEventListener('wheel', onWheel);
-    };
-  }, [activePlan?.id]);
+    const factor = delta < 0 ? 1.15 : 0.85;
+    setZoom((prevZoom) => {
+      const nextZoom = Math.max(0.12, Math.min(6.0, Number((prevZoom * factor).toFixed(2))));
+      return nextZoom;
+    });
+  }, []);
+
+  // Callback ref: Attaches wheel listener with { passive: false } the exact moment the element mounts!
+  const setViewportRef = useCallback((node) => {
+    if (viewportRef.current) {
+      viewportRef.current.removeEventListener('wheel', handleWheelZoom);
+    }
+    viewportRef.current = node;
+    if (node) {
+      node.addEventListener('wheel', handleWheelZoom, { passive: false });
+    }
+  }, [handleWheelZoom]);
 
   // Sync selected device notes & zone
   useEffect(() => {
@@ -252,13 +258,13 @@ export default function InteractiveMap({
     autoFitBlueprint();
   };
 
-  // Zoom controls
+  // Zoom controls (multiplicative, natural scaling)
   const handleZoomIn = () => {
-    setZoom((z) => Math.min(6.0, Number((z + 0.20).toFixed(2))));
+    setZoom((z) => Math.min(6.0, Number((z * 1.20).toFixed(2))));
   };
 
   const handleZoomOut = () => {
-    setZoom((z) => Math.max(0.12, Number((z - 0.15).toFixed(2))));
+    setZoom((z) => Math.max(0.12, Number((z * 0.82).toFixed(2))));
   };
 
   // Drag Panning Handlers
@@ -383,8 +389,8 @@ export default function InteractiveMap({
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Top Header & Floor Switcher */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{t.mapTitle}</h2>
@@ -394,17 +400,53 @@ export default function InteractiveMap({
           </div>
           <p className="text-xs sm:text-sm text-slate-400">{t.mapSubtitle}</p>
         </div>
+      </div>
 
-        {/* Floor Plan Tabs & Add Plan Button */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
-            {floorPlans.length === 0 ? (
-              <span className="text-xs text-slate-500 px-3 py-1 italic">
-                {isKu ? 'هیچ نەخشەیەک بۆ ئەم پرۆژەیە نییە' : 'No floor plans yet'}
+      {/* 3-Column Studio Layout: Floor Plans Sidebar (Left) | Canvas (Center) | Device Tray (Right) */}
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* 1. Left Sidebar: Floor Plans List (Fixed Height, Scrollable Window) */}
+        <div className="w-full lg:w-64 xl:w-72 shrink-0 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-xl flex flex-col h-[700px]">
+          {/* Header & Add Blueprint Button */}
+          <div className="space-y-3 pb-3 border-b border-slate-800/80 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-blue-400" />
+                <h3 className="text-sm font-bold text-white tracking-tight">
+                  {isKu ? 'نەخشەکانی بینا' : 'Floor Plans'}
+                </h3>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                {floorPlans.length}
               </span>
+            </div>
+
+            <button
+              onClick={() => setIsAddPlanModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isKu ? '+ نەخشەی نوێ (PDF / وێنە)' : '+ Add Blueprint (PDF / Img)'}</span>
+            </button>
+          </div>
+
+          {/* Scrollable Floor Plans List inside Fixed Window */}
+          <div className="flex-1 overflow-y-auto space-y-2 pt-3 pr-1 custom-scrollbar">
+            {floorPlans.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-500 italic">
+                {isKu ? 'هیچ نەخشەیەک بەردەست نییە' : 'No floor plans available'}
+              </div>
             ) : (
               floorPlans.map((fp) => {
                 const isActive = fp.id === activePlan?.id;
+                const planDeviceCount = devices.filter((d) => d.floor_plan_id === fp.id).length;
+
+                const zoneBadgeClass =
+                  fp.zone_type === 'outdoor'
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                    : fp.zone_type === 'rack'
+                    ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                    : 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+
                 return (
                   <button
                     key={fp.id}
@@ -414,36 +456,56 @@ export default function InteractiveMap({
                       setDeviceToPlace(null);
                       setActiveClickCoord(null);
                     }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
+                    className={`w-full text-left p-3 rounded-xl border transition group relative ${
                       isActive
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        ? 'bg-blue-600/15 border-blue-500/80 text-white shadow-md shadow-blue-950/50 ring-1 ring-blue-500/40'
+                        : 'bg-slate-950/50 border-slate-800/80 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700 hover:text-white'
                     }`}
                   >
-                    <span>{isKu ? (fp.name_ku || fp.name) : fp.name}</span>
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-950/60 font-mono">
-                      {fp.zone_type}
-                    </span>
+                    {/* Active Indicator Bar */}
+                    {isActive && (
+                      <span className="absolute left-0 top-2 bottom-2 w-1 bg-blue-500 rounded-r-full" />
+                    )}
+
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold truncate leading-tight">
+                          {isKu ? (fp.name_ku || fp.name) : fp.name}
+                        </p>
+                        {fp.floor_level && (
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {fp.floor_level}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Zone Type Badge */}
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider shrink-0 ${zoneBadgeClass}`}>
+                        {fp.zone_type || 'indoor'}
+                      </span>
+                    </div>
+
+                    {/* Metadata Footer: Pin count */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800/60">
+                      <span className="flex items-center gap-1 font-mono text-[10px]">
+                        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-blue-400' : 'bg-slate-500'}`} />
+                        {planDeviceCount} {isKu ? 'ئامێر' : 'pins'}
+                      </span>
+                      {isActive && (
+                        <span className="text-[10px] text-blue-400 font-semibold">
+                          {isKu ? 'چالاکە' : 'Active'}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })
             )}
           </div>
-
-          <button
-            onClick={() => setIsAddPlanModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isKu ? '+ نەخشەی نوێ (PDF / وێنە)' : '+ Add Blueprint (PDF / Image)'}</span>
-          </button>
         </div>
-      </div>
 
-      {/* Main Map Viewer & Device Staging Drawer */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Side: Interactive Blueprint Canvas (3 cols) */}
-        <div className="lg:col-span-3 space-y-3">
+        {/* 2. Center: Interactive Blueprint Canvas */}
+        <div className="flex-1 min-w-0 w-full space-y-3">
           {/* Controls Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-2xl">
             <div className="flex items-center gap-2.5 text-xs text-slate-300">
@@ -519,7 +581,7 @@ export default function InteractiveMap({
 
           {/* Map Surface Viewport with Silky Smooth Pan & Zoom */}
           <div
-            ref={viewportRef}
+            ref={setViewportRef}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -534,7 +596,7 @@ export default function InteractiveMap({
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
-                  transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0px) scale(${zoom})`,
+                  transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
                   willChange: 'transform',
                 }}
@@ -801,8 +863,8 @@ export default function InteractiveMap({
           </div>
         </div>
 
-        {/* Right Side: Staging Tray & Device Inspector (1 col) */}
-        <div className="space-y-4">
+        {/* 3. Right Sidebar: Staging Tray & Device Inspector */}
+        <div className="w-full lg:w-72 xl:w-80 shrink-0 space-y-4">
           {/* Selected Device Inspector Drawer */}
           {selectedDevice ? (
             <div className="bg-slate-900/90 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
