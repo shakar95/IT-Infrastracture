@@ -22,34 +22,9 @@ import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
 import ZoneEditorModal from './ZoneEditorModal';
 import EstateZoneEditorModal from './EstateZoneEditorModal';
+import { ensurePdfJs, renderPdfToHighResPng } from '../utils/pdfEngine';
 
-// Helper to ensure PDF.js is loaded
-const ensurePdfJs = async () => {
-  if (window.pdfjsLib) {
-    if (!window.pdfjsLib.GlobalWorkerOptions?.workerSrc) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }
-    return window.pdfjsLib;
-  }
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        resolve(window.pdfjsLib);
-      } else {
-        reject(new Error('PDF.js not loaded'));
-      }
-    };
-    script.onerror = () => reject(new Error('Failed to load PDF vector engine'));
-    document.head.appendChild(script);
-  });
-};
-
-const compressImageFile = (file, maxDimension = 3600, quality = 0.92) => {
+const compressImageFile = (file, maxDimension = 5400, quality = 0.98) => {
   return new Promise((resolve, reject) => {
     if (!file) return reject(new Error('Invalid image'));
     const reader = new FileReader();
@@ -73,7 +48,8 @@ const compressImageFile = (file, maxDimension = 3600, quality = 0.92) => {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        const isPng = file.type === 'image/png' || file.name?.toLowerCase().endsWith('.png');
+        resolve(canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', quality));
       };
       img.src = e.target.result;
     };
@@ -150,35 +126,11 @@ export default function AddFloorPlanModal({
 
   if (!isOpen) return null;
 
-  // Render a specific page of the loaded PDF (Full aspect ratio, zero edge-clipping)
+  // Render a specific page of the loaded PDF (Vector High-DPI Lossless PNG, zero edge-clipping)
   const renderPdfPage = async (pdfDoc, pageNum) => {
     try {
-      const page = await pdfDoc.getPage(pageNum);
-      // Unscaled base dimensions of the architectural drawing
-      const unscaledViewport = page.getViewport({ scale: 1.0 });
-
-      // Calculate scale so entire page fits in high-DPI canvas without cropping any edges
-      const maxCanvasDim = 3600;
-      const calculatedScale = Math.min(2.5, maxCanvasDim / Math.max(unscaledViewport.width, unscaledViewport.height));
-      const safeScale = Math.max(1.0, calculatedScale);
-
-      const viewport = page.getViewport({ scale: safeScale });
-      const canvas = document.createElement('canvas');
-      // Ceiling viewport dimensions to guarantee no edge pixel is cropped
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext('2d');
-
-      // Clean white architectural drawing background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-      }).promise;
-
-      return canvas.toDataURL('image/jpeg', 0.92);
+      const rendered = await renderPdfToHighResPng(pdfDoc, pageNum, 5400);
+      return rendered.dataUrl;
     } catch (err) {
       console.error('Error rendering PDF page:', err);
       throw err;
@@ -253,7 +205,7 @@ export default function AddFloorPlanModal({
         setImagePreview(renderedDataUrl);
 
         try {
-          const res = await api.uploadFloorPlanImage(renderedDataUrl);
+          const res = await api.uploadFloorPlanImage(file);
           if (res?.publicUrl) setImageUrl(res.publicUrl);
           else setImageUrl(renderedDataUrl);
         } catch {
@@ -263,11 +215,11 @@ export default function AddFloorPlanModal({
         // Standard Image File (.png, .jpg, .svg, .webp)
         setLoadedPdfDoc(null);
         setPdfTotalPages(0);
-        const compressedDataUrl = await compressImageFile(file, 3600, 0.92);
+        const compressedDataUrl = await compressImageFile(file, 5400, 0.98);
         setImagePreview(compressedDataUrl);
 
         try {
-          const res = await api.uploadFloorPlanImage(compressedDataUrl);
+          const res = await api.uploadFloorPlanImage(file);
           if (res?.publicUrl) setImageUrl(res.publicUrl);
           else setImageUrl(compressedDataUrl);
         } catch {

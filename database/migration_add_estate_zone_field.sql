@@ -16,3 +16,4 @@ ADD COLUMN IF NOT EXISTS zone TEXT DEFAULT 'main_villa';
 -- 3. Populate existing records with defaults if null
 UPDATE floor_plans SET zone = 'main_villa' WHERE zone IS NULL;
 UPDATE devices SET zone = 'main_villa' WHERE zone IS NULL;
+

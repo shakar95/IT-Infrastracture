@@ -34,6 +34,7 @@ import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
 import ZoneEditorModal from './ZoneEditorModal';
 import EstateZoneEditorModal from './EstateZoneEditorModal';
+import BlueprintCanvas from './BlueprintCanvas';
 import { api } from '../services/api';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
@@ -125,39 +126,27 @@ export default function InteractiveMap({
     const vpWidth = vp.clientWidth || 800;
     const vpHeight = vp.clientHeight || 560;
 
-    const bWidth = customWidth || planDimensions.width || 1200;
-    const bHeight = customHeight || planDimensions.height || 800;
+    const bWidth = customWidth || planDimensions.width || 2400;
+    const bHeight = customHeight || planDimensions.height || 1600;
 
     const pad = 48;
     const scaleX = (vpWidth - pad) / bWidth;
     const scaleY = (vpHeight - pad) / bHeight;
     const fitScale = Math.min(scaleX, scaleY);
-    const safeZoom = Math.max(0.12, Math.min(1.0, Number(fitScale.toFixed(2))));
+    const safeZoom = Math.max(0.06, Math.min(1.0, Number(fitScale.toFixed(3))));
 
     setZoom(safeZoom);
     setPan({ x: 0, y: 0 });
   }, [planDimensions]);
 
-  // Update plan dimensions when active plan image loads and auto-fit to screen ONCE
-  const handleBlueprintImageLoad = (e) => {
-    const nw = e.target.naturalWidth;
-    const nh = e.target.naturalHeight;
-    if (!nw || !nh) return;
-    const baseWidth = 1200;
-    let w = baseWidth;
-    let h = Math.round((nh / nw) * baseWidth);
-    if (h > 950) {
-      h = 950;
-      w = Math.round((nw / nh) * 950);
-    }
+  // Handle dimensions from BlueprintCanvas (high-DPI resolution, up to 5200px)
+  const handleDimensionsReady = useCallback((w, h) => {
     setPlanDimensions({ width: w, height: h });
-
-    // Only auto-fit when this floor plan hasn't been fitted yet (never reset user's manual zoom!)
     if (lastFittedPlanIdRef.current !== activePlan?.id) {
       lastFittedPlanIdRef.current = activePlan?.id;
       autoFitBlueprint(w, h);
     }
-  };
+  }, [activePlan?.id, autoFitBlueprint]);
 
   // 5. Effects
   // Sync initial selections
@@ -180,31 +169,6 @@ export default function InteractiveMap({
     }
   }, [floorPlans, selectedPlanId]);
 
-  // Auto-fit blueprint ONCE whenever active plan changes
-  useEffect(() => {
-    if (!activePlan?.id) return;
-    if (lastFittedPlanIdRef.current !== activePlan.id) {
-      lastFittedPlanIdRef.current = activePlan.id;
-      if (activePlan.image_url) {
-        const img = new Image();
-        img.onload = () => {
-          const nw = img.naturalWidth || 1200;
-          const nh = img.naturalHeight || 800;
-          const baseWidth = 1200;
-          let w = baseWidth;
-          let h = Math.round((nh / nw) * baseWidth);
-          if (h > 950) {
-            h = 950;
-            w = Math.round((nw / nh) * 950);
-          }
-          setPlanDimensions({ width: w, height: h });
-          autoFitBlueprint(w, h);
-        };
-        img.src = activePlan.image_url;
-      }
-    }
-  }, [activePlan?.id, activePlan?.image_url]);
-
   // Non-passive wheel handler: Smooth, guaranteed e.preventDefault() to stop page scroll, supports mouse & trackpad
   const handleWheelZoom = useCallback((e) => {
     e.preventDefault();
@@ -215,7 +179,7 @@ export default function InteractiveMap({
 
     const factor = delta < 0 ? 1.15 : 0.85;
     setZoom((prevZoom) => {
-      const nextZoom = Math.max(0.12, Math.min(6.0, Number((prevZoom * factor).toFixed(2))));
+      const nextZoom = Math.max(0.06, Math.min(12.0, Number((prevZoom * factor).toFixed(3))));
       return nextZoom;
     });
   }, []);
@@ -317,7 +281,7 @@ export default function InteractiveMap({
       e.preventDefault();
       e.stopPropagation();
     }
-    setZoom((prev) => Math.min(6.0, Number((prev * 1.25).toFixed(2))));
+    setZoom((prev) => Math.min(12.0, Number((prev * 1.25).toFixed(3))));
   };
 
   const handleZoomOut = (e) => {
@@ -325,7 +289,7 @@ export default function InteractiveMap({
       e.preventDefault();
       e.stopPropagation();
     }
-    setZoom((prev) => Math.max(0.12, Number((prev * 0.80).toFixed(2))));
+    setZoom((prev) => Math.max(0.06, Number((prev * 0.80).toFixed(3))));
   };
 
   const handleResetView = (e) => {
@@ -415,7 +379,7 @@ export default function InteractiveMap({
       const t2 = e.touches[1];
       const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       const scaleFactor = currentDist / pinchInitialDistRef.current;
-      const newZoom = Math.max(0.12, Math.min(6.0, Number((pinchInitialZoomRef.current * scaleFactor).toFixed(2))));
+      const newZoom = Math.max(0.06, Math.min(12.0, Number((pinchInitialZoomRef.current * scaleFactor).toFixed(3))));
       setZoom(newZoom);
     }
   };
@@ -919,15 +883,15 @@ export default function InteractiveMap({
                   style={{
                     width: `${planDimensions.width}px`,
                     height: `${planDimensions.height}px`,
+                    transformStyle: 'preserve-3d',
+                    backfaceVisibility: 'hidden',
                   }}
                   className="relative rounded-xl overflow-hidden shadow-2xl bg-white border border-slate-700/80"
                 >
-                  <img
-                    src={activePlan.image_url}
-                    alt={activePlan.name}
-                    draggable={false}
-                    onLoad={handleBlueprintImageLoad}
-                    className="w-full h-full object-contain filter brightness-95 contrast-105 pointer-events-none select-none block"
+                  <BlueprintCanvas
+                    activePlan={activePlan}
+                    zoom={zoom}
+                    onDimensionsReady={handleDimensionsReady}
                   />
                   <div className="absolute inset-0 bg-slate-950/5 pointer-events-none" />
 

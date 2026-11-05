@@ -258,3 +258,4 @@ export default function EstateZoneEditorModal({ isOpen, onClose, lang = 'ku' }) 
     </div>
   );
 }
+
