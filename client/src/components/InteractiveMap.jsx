@@ -39,6 +39,7 @@ import { api } from '../services/api';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
+import { formatFloorLevel, formatShortFloorLevel } from '../utils/floorLevels';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -646,19 +647,21 @@ export default function InteractiveMap({
 
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold truncate leading-tight">
-                          {isKu ? (fp.name_ku || fp.name) : fp.name}
-                        </p>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          {fp.zone && (
-                            <span className="text-[10px] text-blue-400 font-medium inline-flex items-center gap-0.5">
-                              <Building2 className="w-2.5 h-2.5" />
-                              <span>{formatEstateZone(fp.zone, lang)}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs font-bold text-white leading-tight">
+                            {isKu ? (fp.name_ku || fp.name) : fp.name}
+                          </p>
+                          {fp.floor_level !== undefined && fp.floor_level !== null && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30 shrink-0">
+                              {formatFloorLevel(fp.floor_level, lang)}
                             </span>
                           )}
-                          {fp.floor_level !== undefined && fp.floor_level !== null && (
-                            <span className="text-[10px] text-slate-400 truncate">
-                              Level: {fp.floor_level}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap mt-1">
+                          {fp.zone && (
+                            <span className="text-[10px] text-slate-400 font-medium inline-flex items-center gap-0.5">
+                              <Building2 className="w-2.5 h-2.5 text-blue-400" />
+                              <span>{formatEstateZone(fp.zone, lang)}</span>
                             </span>
                           )}
                         </div>
@@ -750,6 +753,11 @@ export default function InteractiveMap({
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${isAct ? 'bg-white' : 'bg-slate-500'}`} />
                   <span>{isKu ? (fp.name_ku || fp.name) : fp.name}</span>
+                  {fp.floor_level !== undefined && fp.floor_level !== null && (
+                    <span className="text-[10px] font-mono opacity-80">
+                      ({formatShortFloorLevel(fp.floor_level, lang)})
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -769,6 +777,11 @@ export default function InteractiveMap({
               <span className="font-semibold text-white">
                 {activePlan ? (isKu ? (activePlan.name_ku || activePlan.name) : activePlan.name) : 'No Plan Selected'}
               </span>
+              {activePlan?.floor_level !== undefined && activePlan?.floor_level !== null && (
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  {formatFloorLevel(activePlan.floor_level, lang)}
+                </span>
+              )}
               <span className="text-slate-600">|</span>
               <span className="text-blue-400 font-mono font-bold">
                 {pinnedDevices.length} {isKu ? 'ئامێر جێگیرکراوە' : 'pins placed'}
