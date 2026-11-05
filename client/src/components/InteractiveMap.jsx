@@ -171,6 +171,26 @@ export default function InteractiveMap({
     img.src = activePlan.image_url;
   }, [activePlan?.id, activePlan?.image_url, autoFitBlueprint]);
 
+  // Non-passive wheel listener for silky smooth zoom without passive event listener error
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      setZoom((prevZoom) => {
+        const nextZoom = Math.max(0.12, Math.min(6.0, Number((prevZoom * zoomFactor).toFixed(2))));
+        return nextZoom;
+      });
+    };
+
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      vp.removeEventListener('wheel', onWheel);
+    };
+  }, [activePlan?.id]);
+
   // Sync selected device notes & zone
   useEffect(() => {
     if (selectedDevice) {
@@ -239,15 +259,6 @@ export default function InteractiveMap({
 
   const handleZoomOut = () => {
     setZoom((z) => Math.max(0.12, Number((z - 0.15).toFixed(2))));
-  };
-
-  // Smooth mouse wheel zoom
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newZoom = Math.max(0.12, Math.min(6.0, Number((zoom * zoomFactor).toFixed(2))));
-    if (Math.abs(newZoom - zoom) < 0.005) return;
-    setZoom(newZoom);
   };
 
   // Drag Panning Handlers
@@ -509,7 +520,6 @@ export default function InteractiveMap({
           {/* Map Surface Viewport with Silky Smooth Pan & Zoom */}
           <div
             ref={viewportRef}
-            onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
