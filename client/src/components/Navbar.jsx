@@ -67,36 +67,34 @@ export default function Navbar({
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800">
       {/* Top Project Identification & Switcher Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo & Project Switcher Dropdown */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 p-0.5 shadow-lg shadow-blue-500/20 shrink-0">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                <Building className="w-5 h-5 text-blue-400" />
-              </div>
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shadow-sm shrink-0">
+              <Building className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
             </div>
 
-            <div className="relative" ref={dropdownRef}>
+            <div className="relative min-w-0" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
-                className="flex items-center gap-2 group text-left rounded-xl p-1 -m-1 hover:bg-slate-800/60 transition"
+                className="flex items-center gap-1.5 group text-left rounded-xl p-1 -m-1 hover:bg-slate-800/60 transition min-w-0"
               >
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h1 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5 group-hover:text-blue-400 transition">
-                      {currentProjectName}
-                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isProjectDropdownOpen ? 'rotate-180 text-blue-400' : ''}`} />
+                    <h1 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-1.5 group-hover:text-blue-400 transition truncate">
+                      <span className="truncate">{currentProjectName}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 transition-transform duration-200 shrink-0 ${isProjectDropdownOpen ? 'rotate-180 text-blue-400' : ''}`} />
                     </h1>
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                       {t.systemActive}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 flex items-center gap-1">
-                    <span className="text-slate-400">{t.projectSubtitle} •</span>
-                    <span className="text-amber-400 font-medium">{currentLocation}</span>
+                  <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1 truncate">
+                    <span className="hidden sm:inline text-slate-500">{t.projectSubtitle} •</span>
+                    <span className="text-slate-300 font-medium truncate">{currentLocation}</span>
                   </p>
                 </div>
               </button>
@@ -187,34 +185,34 @@ export default function Navbar({
           </div>
 
           {/* Right Controls: Language Selector */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 shadow-inner">
               <button
                 onClick={() => setLang('en')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition ${
                   lang === 'en'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                English
+                EN
               </button>
               <button
                 onClick={() => setLang('ku')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition font-sans ${
+                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition font-sans ${
                   lang === 'ku'
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-900/40'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                کوردی (Sorani)
+                کوردی
               </button>
             </div>
           </div>
         </div>
 
-        {/* Tab Navigation Menu */}
-        <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto pb-2 scrollbar-none border-t border-slate-800/60 pt-2">
+        {/* Tab Navigation Menu (Touch-friendly horizontal scroll for Mobile & iPad) */}
+        <nav className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-2 scrollbar-none border-t border-slate-800/80 pt-2 touch-pan-x">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -222,13 +220,13 @@ export default function Navbar({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-150 ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-150 shrink-0 ${
                   isActive
-                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 border border-blue-500'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-blue-400' : 'text-slate-400'}`} />
+                <Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                 <span>{item.label}</span>
               </button>
             );

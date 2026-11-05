@@ -58,6 +58,7 @@ export default function InteractiveMap({
   const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [isEditPlanModalOpen, setIsEditPlanModalOpen] = useState(false);
+  const [mobileActiveView, setMobileActiveView] = useState('canvas'); // 'canvas' | 'plans' | 'devices'
 
   // Device Location Zone & Engineering Notes State
   const [deviceNotes, setDeviceNotes] = useState('');
@@ -87,6 +88,10 @@ export default function InteractiveMap({
   const viewportRef = useRef(null);
   const blueprintGraphicRef = useRef(null);
   const lastFittedPlanIdRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+  const touchStartTimeRef = useRef(0);
+  const pinchInitialDistRef = useRef(0);
+  const pinchInitialZoomRef = useRef(1);
 
   // 3. Derived Variables (Available to all functions and effects below)
   const activePlan = floorPlans.find((fp) => fp.id === selectedPlanId) || floorPlans[0];
@@ -332,6 +337,73 @@ export default function InteractiveMap({
     if (isDragging) setIsDragging(false);
   };
 
+  // Multi-Touch Handlers (Mobile & iPad / Tablet Pan + Pinch-to-Zoom)
+  const handleTouchStart = (e) => {
+    if (e.target.closest('.device-pin, .interactive-control, button, input, .quick-assign-popover')) {
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      const t = e.touches[0];
+      dragOriginRef.current = { x: t.clientX, y: t.clientY };
+      panStartRef.current = { x: pan.x, y: pan.y };
+      touchStartPosRef.current = { x: t.clientX, y: t.clientY };
+      touchStartTimeRef.current = Date.now();
+      hasDraggedSignificantlyRef.current = false;
+    } else if (e.touches.length === 2) {
+      setIsDragging(false);
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      pinchInitialDistRef.current = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      pinchInitialZoomRef.current = zoom;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1 && isDragging) {
+      const t = e.touches[0];
+      const dx = t.clientX - dragOriginRef.current.x;
+      const dy = t.clientY - dragOriginRef.current.y;
+      if (Math.hypot(dx, dy) > 8) {
+        hasDraggedSignificantlyRef.current = true;
+      }
+      setPan({
+        x: panStartRef.current.x + dx,
+        y: panStartRef.current.y + dy,
+      });
+    } else if (e.touches.length === 2 && pinchInitialDistRef.current > 0) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const scaleFactor = currentDist / pinchInitialDistRef.current;
+      const newZoom = Math.max(0.12, Math.min(6.0, Number((pinchInitialZoomRef.current * scaleFactor).toFixed(2))));
+      setZoom(newZoom);
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length === 0) {
+      const duration = Date.now() - touchStartTimeRef.current;
+      setIsDragging(false);
+      pinchInitialDistRef.current = 0;
+
+      // Quick tap on blueprint without dragging
+      if (!hasDraggedSignificantlyRef.current && duration < 350) {
+        handleBlueprintClick({
+          clientX: touchStartPosRef.current.x,
+          clientY: touchStartPosRef.current.y,
+        });
+      }
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      dragOriginRef.current = { x: t.clientX, y: t.clientY };
+      panStartRef.current = { x: pan.x, y: pan.y };
+      setIsDragging(true);
+      pinchInitialDistRef.current = 0;
+    }
+  };
+
   // Click anywhere on blueprint to place or open quick placement dialog
   const handleBlueprintClick = (e) => {
     if (!blueprintGraphicRef.current || !activePlan) return;
@@ -428,10 +500,57 @@ export default function InteractiveMap({
         </div>
       </div>
 
+      {/* Mobile & iPad Segmented View Switcher (lg:hidden) */}
+      <div className="lg:hidden flex items-center p-1 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg gap-1">
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('canvas')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition ${
+            mobileActiveView === 'canvas'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Crosshair className="w-3.5 h-3.5" />
+          <span>{isKu ? 'نەخشە' : 'Map Canvas'}</span>
+          <span className="text-[10px] font-mono opacity-80 font-bold">({pinnedDevices.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('plans')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition ${
+            mobileActiveView === 'plans'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>{isKu ? 'پلانەکان' : 'Floor Plans'}</span>
+          <span className="text-[10px] font-mono opacity-80 font-bold">({floorPlans.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('devices')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition ${
+            mobileActiveView === 'devices'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          <span>{isKu ? 'ئامێرەکان' : 'Equipment'}</span>
+          <span className="text-[10px] font-mono opacity-80 font-bold">({unpinnedDevices.length})</span>
+        </button>
+      </div>
+
       {/* 3-Column Studio Layout: Floor Plans Sidebar (Left) | Canvas (Center) | Device Tray (Right) */}
       <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* 1. Left Sidebar: Floor Plans List (Fixed Height, Scrollable Window) */}
-        <div className="w-full lg:w-64 xl:w-72 shrink-0 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-xl flex flex-col h-[700px]">
+        <div className={`w-full lg:w-64 xl:w-72 shrink-0 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-xl flex-col h-[700px] ${
+          mobileActiveView === 'plans' ? 'flex' : 'hidden lg:flex'
+        }`}>
           {/* Header & Add Blueprint Button */}
           <div className="space-y-3 pb-3 border-b border-slate-800/80 shrink-0">
             <div className="flex items-center justify-between">
@@ -448,7 +567,7 @@ export default function InteractiveMap({
 
             <button
               onClick={() => setIsAddPlanModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30 transition active:scale-95"
             >
               <Plus className="w-4 h-4" />
               <span>{isKu ? '+ نەخشەی نوێ (PDF / وێنە)' : '+ Add Blueprint (PDF / Img)'}</span>
@@ -465,13 +584,9 @@ export default function InteractiveMap({
               floorPlans.map((fp) => {
                 const isActive = fp.id === activePlan?.id;
                 const planDeviceCount = devices.filter((d) => d.floor_plan_id === fp.id).length;
-
-                const zoneBadgeClass =
-                  fp.zone_type === 'outdoor'
-                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                    : fp.zone_type === 'rack'
-                    ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
-                    : 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+                const zoneBadgeClass = isActive
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700/60';
 
                 return (
                   <div
@@ -481,6 +596,7 @@ export default function InteractiveMap({
                       setSelectedDevice(null);
                       setDeviceToPlace(null);
                       setActiveClickCoord(null);
+                      setMobileActiveView('canvas');
                     }}
                     role="button"
                     tabIndex={0}
@@ -567,16 +683,51 @@ export default function InteractiveMap({
         </div>
 
         {/* 2. Center: Interactive Blueprint Canvas */}
-        <div className="flex-1 min-w-0 w-full space-y-3">
+        <div className={`flex-1 min-w-0 w-full space-y-3 ${
+          mobileActiveView === 'canvas' ? 'block' : 'hidden lg:block'
+        }`}>
+          {/* Mobile & iPad Quick Floor Plan Pill Selector */}
+          <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
+            {floorPlans.map((fp) => {
+              const isAct = fp.id === activePlan?.id;
+              return (
+                <button
+                  key={fp.id}
+                  onClick={() => {
+                    setSelectedPlanId(fp.id);
+                    setSelectedDevice(null);
+                    setDeviceToPlace(null);
+                    setActiveClickCoord(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 shrink-0 border ${
+                    isAct
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-900/30'
+                      : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isAct ? 'bg-white' : 'bg-slate-500'}`} />
+                  <span>{isKu ? (fp.name_ku || fp.name) : fp.name}</span>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setIsAddPlanModalOpen(true)}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap bg-slate-900 hover:bg-slate-800 text-blue-400 border border-slate-800 shrink-0 flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{isKu ? 'نوێ' : 'Add'}</span>
+            </button>
+          </div>
+
           {/* Controls Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-2xl shadow-md">
             <div className="flex items-center gap-2.5 text-xs text-slate-300">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
               <span className="font-semibold text-white">
                 {activePlan ? (isKu ? (activePlan.name_ku || activePlan.name) : activePlan.name) : 'No Plan Selected'}
               </span>
               <span className="text-slate-600">|</span>
-              <span className="text-amber-400 font-mono font-medium">
+              <span className="text-blue-400 font-mono font-bold">
                 {pinnedDevices.length} {isKu ? 'ئامێر جێگیرکراوە' : 'pins placed'}
               </span>
             </div>
@@ -584,12 +735,12 @@ export default function InteractiveMap({
             {/* Hint & Navigation Tools */}
             <div className="flex items-center gap-2">
               {deviceToPlace && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-xl text-xs text-amber-300 animate-pulse">
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-600/20 border border-blue-500/40 rounded-xl text-xs text-blue-300 animate-pulse">
                   <span>
                     {isKu ? 'کلیک لە نەخشەکە بکە بۆ جێگیرکردنی:' : 'Click layout to anchor:'}{' '}
                     <strong>{deviceToPlace.custom_label_id}</strong>
                   </span>
-                  <button onClick={() => setDeviceToPlace(null)} className="text-amber-400 hover:text-white p-0.5">
+                  <button onClick={() => setDeviceToPlace(null)} className="text-blue-400 hover:text-white p-0.5">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -597,7 +748,7 @@ export default function InteractiveMap({
 
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/70 rounded-xl border border-slate-800 text-[11px] text-slate-400">
                 <Move className="w-3 h-3 text-blue-400" />
-                <span>{isKu ? 'ڕابکێشە بۆ جووڵە • سکرۆڵ بکە بۆ زووم' : 'Drag to pan • Scroll to zoom'}</span>
+                <span>{isKu ? 'ڕابکێشە بۆ جووڵە • زووم بکە بە ٢ پەنجە' : 'Drag to pan • 2-finger zoom'}</span>
               </div>
 
               {/* Zoom Buttons */}
@@ -656,14 +807,18 @@ export default function InteractiveMap({
             </div>
           </div>
 
-          {/* Map Surface Viewport with Silky Smooth Pan & Zoom */}
+          {/* Map Surface Viewport with Silky Smooth Pan & Multi-Touch Zoom (iPad / Mobile Optimized) */}
           <div
             ref={setViewportRef}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
-            className={`relative overflow-hidden bg-slate-950 border border-slate-800 rounded-2xl min-h-[560px] h-[640px] shadow-2xl ${
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            style={{ touchAction: 'none' }}
+            className={`relative overflow-hidden bg-slate-950 border border-slate-800 rounded-2xl min-h-[420px] h-[55vh] sm:min-h-[520px] sm:h-[62vh] lg:h-[640px] shadow-2xl select-none ${
               isDragging ? 'cursor-grabbing' : deviceToPlace ? 'cursor-crosshair' : 'cursor-grab'
             }`}
           >
@@ -724,8 +879,8 @@ export default function InteractiveMap({
                       style={{ left: `${activeClickCoord.x}%`, top: `${activeClickCoord.y}%` }}
                       className="absolute -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none"
                     >
-                      <div className="w-10 h-10 rounded-full border-2 border-dashed border-amber-400 bg-amber-500/20 animate-spin" />
-                      <div className="w-3 h-3 bg-amber-400 rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 shadow-lg shadow-amber-400/50" />
+                      <div className="w-10 h-10 rounded-full border-2 border-dashed border-blue-400 bg-blue-500/20 animate-spin" />
+                      <div className="w-3 h-3 bg-blue-400 rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 shadow-lg shadow-blue-500/50" />
                     </div>
                   )}
 
@@ -814,16 +969,16 @@ export default function InteractiveMap({
             {/* Quick Click-to-Place Popover Dialog */}
             {activeClickCoord && (
               <div
-                className="quick-assign-popover absolute z-50 bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 bg-slate-900/95 backdrop-blur-md border border-amber-500/40 rounded-2xl p-4 shadow-2xl space-y-3 animate-fadeIn"
+                className="quick-assign-popover absolute z-50 bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 bg-slate-900/95 backdrop-blur-md border border-blue-500/40 rounded-2xl p-4 shadow-2xl space-y-3 animate-fadeIn"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
-                    <Crosshair className="w-4 h-4 text-amber-400" />
+                    <Crosshair className="w-4 h-4 text-blue-400" />
                     <span>{isKu ? 'جێگیرکردنی ئامێر لەم خاڵە' : 'Place Device At This Point'}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                    <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
                       X: {activeClickCoord.x}% Y: {activeClickCoord.y}%
                     </span>
                     <button
@@ -940,11 +1095,13 @@ export default function InteractiveMap({
           </div>
         </div>
 
-        {/* 3. Right Sidebar: Staging Tray & Device Inspector */}
-        <div className="w-full lg:w-72 xl:w-80 shrink-0 space-y-4">
+        {/* 3. Right Sidebar: Staging Tray & Device Inspector (Mobile & iPad Drawer Supported) */}
+        <div className={`w-full lg:w-72 xl:w-80 shrink-0 space-y-4 ${
+          mobileActiveView === 'devices' || (mobileActiveView === 'canvas' && selectedDevice) ? 'block' : 'hidden lg:block'
+        }`}>
           {/* Selected Device Inspector Drawer */}
           {selectedDevice ? (
-            <div className="bg-slate-900/90 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
+            <div className="bg-slate-900/95 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
               <div className="flex items-start justify-between">
                 <div>
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
@@ -987,7 +1144,7 @@ export default function InteractiveMap({
               {/* Coordinates Pill */}
               <div className="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono">
                 <span className="text-slate-400">Blueprint Position:</span>
-                <span className="text-amber-400 font-bold">
+                <span className="text-blue-400 font-bold">
                   X: {selectedDevice.pos_x ?? '—'}% / Y: {selectedDevice.pos_y ?? '—'}%
                 </span>
               </div>
@@ -995,17 +1152,7 @@ export default function InteractiveMap({
               {/* Status Badge */}
               <div className="flex items-center justify-between p-2.5 bg-slate-950 rounded-xl border border-slate-800">
                 <span className="text-xs text-slate-400">Installation Status:</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                    selectedDevice.installation_status === 'Verified'
-                      ? 'bg-emerald-500/20 text-emerald-400'
-                      : selectedDevice.installation_status === 'Configured'
-                      ? 'bg-indigo-500/20 text-indigo-400'
-                      : selectedDevice.installation_status === 'Installed'
-                      ? 'bg-blue-500/20 text-blue-400'
-                      : 'bg-amber-500/20 text-amber-400'
-                  }`}
-                >
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
                   {selectedDevice.installation_status}
                 </span>
               </div>
@@ -1045,7 +1192,7 @@ export default function InteractiveMap({
                     disabled={isSavingZone}
                     className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
                       deviceZone === 'outdoor'
-                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30 font-bold border border-emerald-400'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
                         : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
                     }`}
                   >
@@ -1059,7 +1206,7 @@ export default function InteractiveMap({
                     disabled={isSavingZone}
                     className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
                       deviceZone === 'rack'
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30 font-bold border border-purple-400'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
                         : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
                     }`}
                   >
@@ -1073,11 +1220,11 @@ export default function InteractiveMap({
               <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-amber-400" />
+                    <FileText className="w-3.5 h-3.5 text-blue-400" />
                     <span>{isKu ? 'تێبینی ئەندازیاری' : 'Engineering Notes'}</span>
                   </label>
                   {notesSavedSuccess && (
-                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 animate-fadeIn">
+                    <span className="text-[10px] text-blue-400 font-semibold flex items-center gap-1 animate-fadeIn">
                       <Check className="w-3 h-3" />
                       <span>{isKu ? 'تێبینی سەیڤ کرا!' : 'Note Saved!'}</span>
                     </span>
@@ -1120,7 +1267,7 @@ export default function InteractiveMap({
               <div className="space-y-2 text-xs font-mono">
                 <div className="flex justify-between p-2 bg-slate-950/60 rounded-lg">
                   <span className="text-slate-400">IP Address:</span>
-                  <span className="text-cyan-400 font-bold">{selectedDevice.ip_address || 'Unassigned'}</span>
+                  <span className="text-blue-400 font-bold">{selectedDevice.ip_address || 'Unassigned'}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-slate-950/60 rounded-lg">
                   <span className="text-slate-400">MAC Address:</span>
@@ -1132,7 +1279,7 @@ export default function InteractiveMap({
                 </div>
                 <div className="flex justify-between p-2 bg-slate-950/60 rounded-lg">
                   <span className="text-slate-400">Switch Port:</span>
-                  <span className="text-amber-300 truncate">
+                  <span className="text-slate-200 truncate">
                     {selectedDevice.switch_name ? `${selectedDevice.switch_name} [${selectedDevice.switch_port}]` : '—'}
                   </span>
                 </div>
@@ -1149,13 +1296,13 @@ export default function InteractiveMap({
                   disabled={!selectedDevice.ip_address || pingStatus === 'testing'}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white transition disabled:opacity-50"
                 >
-                  <Activity className={`w-3.5 h-3.5 ${pingStatus === 'testing' ? 'animate-spin text-amber-400' : 'text-emerald-400'}`} />
+                  <Activity className={`w-3.5 h-3.5 ${pingStatus === 'testing' ? 'animate-spin text-blue-400' : 'text-blue-400'}`} />
                   <span>{pingStatus === 'testing' ? 'Pinging ICMP...' : t.testPing}</span>
                 </button>
 
                 {pingStatus && pingStatus !== 'testing' && (
                   <div className={`mt-2 p-2 rounded-lg text-[11px] font-mono text-center border ${
-                    pingStatus.ok ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-300' : 'bg-red-950/40 border-red-800/40 text-red-300'
+                    pingStatus.ok ? 'bg-blue-950/40 border-blue-800/40 text-blue-300' : 'bg-red-950/40 border-red-800/40 text-red-300'
                   }`}>
                     {pingStatus.ok ? `Reply from ${pingStatus.ip}: time=${pingStatus.latency}ms TTL=64` : `Request timed out (Host Unreachable)`}
                   </div>
@@ -1166,9 +1313,9 @@ export default function InteractiveMap({
               <div className="space-y-2 pt-2 border-t border-slate-800">
                 <button
                   onClick={() => onOpenTroubleshoot(selectedDevice)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 transition active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600/15 hover:bg-blue-600/25 text-blue-300 border border-blue-500/30 transition active:scale-95"
                 >
-                  <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                  <Bot className="w-3.5 h-3.5 text-blue-400" />
                   <span>{t.launchTroubleshoot}</span>
                 </button>
 
