@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Upload,
@@ -12,6 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -76,8 +78,11 @@ const compressImageFile = (file, maxDimension = 3600, quality = 0.92) => {
 export default function AddFloorPlanModal({
   isOpen,
   onClose,
+  planToEdit = null,
   onFloorPlanCreated,
   onCreateFloorPlan,
+  onUpdateFloorPlan,
+  onDeleteFloorPlan,
   lang = 'en',
 }) {
   const isKu = lang === 'ku';
@@ -97,6 +102,34 @@ export default function AddFloorPlanModal({
   const [pdfTotalPages, setPdfTotalPages] = useState(0);
   const [fileMeta, setFileMeta] = useState(null); // { name, type, size }
   const [dwgNotice, setDwgNotice] = useState(false);
+
+  useEffect(() => {
+    if (planToEdit) {
+      setName(planToEdit.name || '');
+      setNameKu(planToEdit.name_ku || planToEdit.name || '');
+      setZoneType(planToEdit.zone_type || 'indoor');
+      setFloorLevel(planToEdit.floor_level ?? 0);
+      setImageUrl(planToEdit.image_url || '');
+      setImagePreview(planToEdit.image_url || '');
+      setLoadedPdfDoc(null);
+      setPdfPageNumber(1);
+      setPdfTotalPages(0);
+      setFileMeta(null);
+      setDwgNotice(false);
+    } else {
+      setName('');
+      setNameKu('');
+      setZoneType('indoor');
+      setFloorLevel(0);
+      setImageUrl('');
+      setImagePreview('');
+      setLoadedPdfDoc(null);
+      setPdfPageNumber(1);
+      setPdfTotalPages(0);
+      setFileMeta(null);
+      setDwgNotice(false);
+    }
+  }, [planToEdit, isOpen]);
 
   if (!isOpen) return null;
 
@@ -254,20 +287,31 @@ export default function AddFloorPlanModal({
         scale_meters_per_pixel: 0.05,
       };
 
-      let createdPlan;
-      if (onCreateFloorPlan) {
-        createdPlan = await onCreateFloorPlan(planPayload);
+      if (planToEdit) {
+        let updatedPlan;
+        if (onUpdateFloorPlan) {
+          updatedPlan = await onUpdateFloorPlan(planToEdit.id, planPayload);
+        } else {
+          updatedPlan = await api.updateFloorPlan(planToEdit.id, planPayload);
+        }
+        if (onFloorPlanCreated) {
+          onFloorPlanCreated(updatedPlan);
+        }
       } else {
-        createdPlan = await api.createFloorPlan(planPayload);
-      }
-
-      if (onFloorPlanCreated) {
-        onFloorPlanCreated(createdPlan);
+        let createdPlan;
+        if (onCreateFloorPlan) {
+          createdPlan = await onCreateFloorPlan(planPayload);
+        } else {
+          createdPlan = await api.createFloorPlan(planPayload);
+        }
+        if (onFloorPlanCreated) {
+          onFloorPlanCreated(createdPlan);
+        }
       }
 
       onClose();
     } catch (err) {
-      alert(err.message || 'Failed to create site plan');
+      alert(err.message || (planToEdit ? 'Failed to update site plan' : 'Failed to create site plan'));
     } finally {
       setIsSubmitting(false);
     }
@@ -281,17 +325,23 @@ export default function AddFloorPlanModal({
       >
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
-              <MapPin className="w-5 h-5" />
+            <div className={`p-2 rounded-xl ${planToEdit ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+              {planToEdit ? <Pencil className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-white">
-                {isKu ? 'زیادکردنی نەخشە و پلانی ئەندازیاری (PDF / وێنە)' : 'Add Architectural Blueprint (PDF / Image)'}
+                {planToEdit
+                  ? (isKu ? 'دەستکاری نەخشە و زانیارییەکان' : 'Edit Floor Plan / Location')
+                  : (isKu ? 'زیادکردنی نەخشە و پلانی ئەندازیاری (PDF / وێنە)' : 'Add Architectural Blueprint (PDF / Image)')}
               </h3>
               <p className="text-xs text-slate-400">
-                {isKu
-                  ? 'فایلی PDF ی کوالیتی بەرز یان وێنە ئەپلۆد بکە بۆ جێگیرکردنی دیڤایسەکان بە کلیک'
-                  : 'Upload high-DPI PDF drawings or images with instant click-to-place pin'}
+                {planToEdit
+                  ? (isKu
+                      ? 'دەتوانیت ناوی نەخشە، جۆری شوێن، قات، یان وێنەی بلوپرینتەکە بگۆڕیت'
+                      : 'Update name, zone type, floor level, or replace blueprint image/PDF')
+                  : (isKu
+                      ? 'فایلی PDF ی کوالیتی بەرز یان وێنە ئەپلۆد بکە بۆ جێگیرکردنی دیڤایسەکان بە کلیک'
+                      : 'Upload high-DPI PDF drawings or images with instant click-to-place pin')}
               </p>
             </div>
           </div>
@@ -495,22 +545,50 @@ export default function AddFloorPlanModal({
             </div>
           </div>
 
-          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
-            >
-              {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || isUploading}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40 transition active:scale-95 disabled:opacity-50"
-            >
-              <Check className="w-4 h-4" />
-              <span>{isKu ? 'سەیڤکردنی سایت پلان' : 'Save Site Plan'}</span>
-            </button>
+          <div className="pt-3 flex items-center justify-between gap-3 border-t border-slate-800">
+            {planToEdit && onDeleteFloorPlan ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const planTitle = isKu ? (planToEdit.name_ku || planToEdit.name) : planToEdit.name;
+                  const confirmMsg = isKu
+                    ? `ئایا دڵنیایت لە سڕینەوەی ئەم نەخشەیە: "${planTitle}"؟\nدیڤایسەکانی سەر ئەم نەخشەیە لادەبرێن.`
+                    : `Are you sure you want to delete "${planTitle}"?`;
+                  if (window.confirm(confirmMsg)) {
+                    await onDeleteFloorPlan(planToEdit.id);
+                    onClose();
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isKu ? 'سڕینەوەی نەخشە' : 'Delete Plan'}</span>
+              </button>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || isUploading}
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40 transition active:scale-95 disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {planToEdit
+                    ? (isKu ? 'پاشەکەوتکردنی گۆڕانکارییەکان' : 'Save Changes')
+                    : (isKu ? 'سەیڤکردنی سایت پلان' : 'Save Site Plan')}
+                </span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

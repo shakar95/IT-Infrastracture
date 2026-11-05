@@ -204,6 +204,49 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT update floor plan (Name, Kurdish Name, Zone, Floor Level, Blueprint Image)
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, name_ku, zone_type, floor_level, image_url, scale_meters_per_pixel } = req.body;
+
+    const updatePayload = {};
+    if (name !== undefined) updatePayload.name = name;
+    if (name_ku !== undefined) updatePayload.name_ku = name_ku;
+    if (zone_type !== undefined) updatePayload.zone_type = zone_type;
+    if (floor_level !== undefined) updatePayload.floor_level = Number(floor_level) || 0;
+    if (image_url !== undefined) updatePayload.image_url = image_url;
+    if (scale_meters_per_pixel !== undefined) updatePayload.scale_meters_per_pixel = Number(scale_meters_per_pixel);
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('floor_plans')
+        .update(updatePayload)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return res.json(data);
+    }
+
+    const idx = mockFloorPlans.findIndex((fp) => fp.id === id);
+    if (idx !== -1) {
+      mockFloorPlans[idx] = {
+        ...mockFloorPlans[idx],
+        ...updatePayload,
+        updated_at: new Date().toISOString(),
+      };
+      return res.json(mockFloorPlans[idx]);
+    }
+
+    return res.status(404).json({ error: 'Floor plan not found' });
+  } catch (err) {
+    console.error('Error updating floor plan:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE floor plan
 router.delete('/:id', async (req, res) => {
   try {

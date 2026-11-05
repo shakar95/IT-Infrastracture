@@ -379,6 +379,17 @@ export default function App() {
     }
   };
 
+  const handleUpdateFloorPlan = async (id, updatedData) => {
+    try {
+      const updated = await api.updateFloorPlan(id, updatedData);
+      setFloorPlans((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+      return updated;
+    } catch (err) {
+      alert(err.message || 'Failed to update floor plan');
+      throw err;
+    }
+  };
+
   const handleDeleteFloorPlan = async (id) => {
     if (!window.confirm('Delete this floor plan / site plan?')) return;
     try {
@@ -493,6 +504,7 @@ export default function App() {
                 onUpdateDevice={handleUpdateDevice}
                 onOpenTroubleshoot={handleOpenTroubleshoot}
                 onCreateFloorPlan={handleCreateFloorPlan}
+                onUpdateFloorPlan={handleUpdateFloorPlan}
                 onDeleteFloorPlan={handleDeleteFloorPlan}
                 initialSelectedPlanId={selectedMapPlanId}
                 initialSelectedDevice={selectedMapDevice}

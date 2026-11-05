@@ -179,6 +179,13 @@ export const api = {
       body: JSON.stringify(planData),
     }));
   },
+  async updateFloorPlan(id, planData) {
+    return handleResponse(await fetch(`${API_BASE}/maps/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planData),
+    }));
+  },
   async uploadFloorPlanImage(fileOrBase64) {
     if (typeof fileOrBase64 === 'string') {
       return handleResponse(await fetch(`${API_BASE}/maps/upload`, {

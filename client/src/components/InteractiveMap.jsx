@@ -19,6 +19,7 @@ import {
   X,
   Plus,
   Trash2,
+  Pencil,
   AlertTriangle,
   Move,
   Search,
@@ -40,6 +41,7 @@ export default function InteractiveMap({
   onUpdateDevice,
   onOpenTroubleshoot,
   onCreateFloorPlan,
+  onUpdateFloorPlan,
   onDeleteFloorPlan,
   initialSelectedPlanId = null,
   initialSelectedDevice = null,
@@ -54,6 +56,8 @@ export default function InteractiveMap({
   const [pingStatus, setPingStatus] = useState(null);
   const [deviceToPlace, setDeviceToPlace] = useState(null);
   const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [isEditPlanModalOpen, setIsEditPlanModalOpen] = useState(false);
 
   // Device Location Zone & Engineering Notes State
   const [deviceNotes, setDeviceNotes] = useState('');
@@ -470,7 +474,7 @@ export default function InteractiveMap({
                     : 'bg-blue-500/15 text-blue-400 border-blue-500/30';
 
                 return (
-                  <button
+                  <div
                     key={fp.id}
                     onClick={() => {
                       setSelectedPlanId(fp.id);
@@ -478,7 +482,9 @@ export default function InteractiveMap({
                       setDeviceToPlace(null);
                       setActiveClickCoord(null);
                     }}
-                    className={`w-full text-left p-3 rounded-xl border transition group relative ${
+                    role="button"
+                    tabIndex={0}
+                    className={`w-full text-left p-3 rounded-xl border transition group relative cursor-pointer ${
                       isActive
                         ? 'bg-blue-600/15 border-blue-500/80 text-white shadow-md shadow-blue-950/50 ring-1 ring-blue-500/40'
                         : 'bg-slate-950/50 border-slate-800/80 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700 hover:text-white'
@@ -494,9 +500,9 @@ export default function InteractiveMap({
                         <p className="text-xs font-bold truncate leading-tight">
                           {isKu ? (fp.name_ku || fp.name) : fp.name}
                         </p>
-                        {fp.floor_level && (
+                        {fp.floor_level !== undefined && fp.floor_level !== null && (
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                            {fp.floor_level}
+                            Level: {fp.floor_level}
                           </p>
                         )}
                       </div>
@@ -507,19 +513,53 @@ export default function InteractiveMap({
                       </span>
                     </div>
 
-                    {/* Metadata Footer: Pin count */}
+                    {/* Metadata Footer: Pin count + Edit / Delete Action Buttons */}
                     <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800/60">
                       <span className="flex items-center gap-1 font-mono text-[10px]">
                         <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-blue-400' : 'bg-slate-500'}`} />
                         {planDeviceCount} {isKu ? 'ئامێر' : 'pins'}
                       </span>
-                      {isActive && (
-                        <span className="text-[10px] text-blue-400 font-semibold">
-                          {isKu ? 'چالاکە' : 'Active'}
-                        </span>
-                      )}
+
+                      {/* Action buttons (Edit & Delete) */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingPlan(fp);
+                            setIsEditPlanModalOpen(true);
+                          }}
+                          title={isKu ? 'دەستکاریکردنی نەخشە، ناو، و وێنە' : 'Edit floor plan details & image'}
+                          className="p-1 text-slate-400 hover:text-blue-400 hover:bg-blue-500/20 rounded-md transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {onDeleteFloorPlan && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const planTitle = isKu ? (fp.name_ku || fp.name) : fp.name;
+                              const confirmMsg = isKu
+                                ? `ئایا دڵنیایت لە سڕینەوەی ئەم نەخشەیە: "${planTitle}"؟\nدیڤایسەکانی سەر ئەم نەخشەیە لادەبرێن.`
+                                : `Are you sure you want to delete "${planTitle}"?`;
+                              if (window.confirm(confirmMsg)) {
+                                onDeleteFloorPlan(fp.id);
+                                if (selectedPlanId === fp.id) {
+                                  const remaining = floorPlans.filter((p) => p.id !== fp.id);
+                                  setSelectedPlanId(remaining[0]?.id || '');
+                                }
+                              }
+                            }}
+                            title={isKu ? 'سڕینەوەی نەخشە' : 'Delete floor plan'}
+                            className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/20 rounded-md transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}
@@ -587,6 +627,21 @@ export default function InteractiveMap({
                   <Maximize2 className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {/* Edit Active Floor Plan Button */}
+              {activePlan && (
+                <button
+                  onClick={() => {
+                    setEditingPlan(activePlan);
+                    setIsEditPlanModalOpen(true);
+                  }}
+                  title={isKu ? 'دەستکاریکردنی نەخشە، ناو، و وێنەی بلوپرینت' : 'Edit floor plan name & blueprint image'}
+                  className="px-2.5 py-1.5 text-slate-300 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl border border-slate-800 hover:border-blue-500/30 transition flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="hidden sm:inline">{isKu ? 'دەستکاری نەخشە' : 'Edit Blueprint'}</span>
+                </button>
+              )}
 
               {/* Delete Active Floor Plan */}
               {activePlan && onDeleteFloorPlan && (
@@ -1190,6 +1245,27 @@ export default function InteractiveMap({
         onFloorPlanCreated={(newPlan) => {
           if (newPlan?.id) {
             setSelectedPlanId(newPlan.id);
+          }
+        }}
+        lang={lang}
+      />
+
+      {/* Edit Site Plan / Floor Plan Modal */}
+      <AddFloorPlanModal
+        isOpen={isEditPlanModalOpen}
+        onClose={() => {
+          setIsEditPlanModalOpen(false);
+          setEditingPlan(null);
+        }}
+        planToEdit={editingPlan}
+        onUpdateFloorPlan={onUpdateFloorPlan}
+        onDeleteFloorPlan={(id) => {
+          if (onDeleteFloorPlan) {
+            onDeleteFloorPlan(id);
+            if (selectedPlanId === id) {
+              const remaining = floorPlans.filter((p) => p.id !== id);
+              setSelectedPlanId(remaining[0]?.id || '');
+            }
           }
         }}
         lang={lang}
