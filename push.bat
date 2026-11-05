@@ -13,6 +13,10 @@ if "%GITHUB_TOKEN%"=="" (
     exit /b
 )
 echo.
+echo Committing latest changes...
+git add -A
+git commit -m "Fix: Blueprint auto-fit to screen with zero edge-cropping, notes and zone support"
+echo.
 echo Pushing main branch to GitHub...
 git push https://shakaralii:%GITHUB_TOKEN%@github.com/shakaralii/IT-Infrastracture.git main
 echo.

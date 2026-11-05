@@ -151,11 +151,11 @@ export const api = {
       body: JSON.stringify({ status }),
     }));
   },
-  async updateDevicePosition(id, { floor_plan_id, pos_x, pos_y }) {
+  async updateDevicePosition(id, positionData) {
     return handleResponse(await fetch(`${API_BASE}/devices/${id}/position`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ floor_plan_id, pos_x, pos_y }),
+      body: JSON.stringify(positionData),
     }));
   },
   async deleteDevice(id) {

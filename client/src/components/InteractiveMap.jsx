@@ -25,9 +25,11 @@ import {
   Crosshair,
   Sparkles,
   FileText,
+  Check,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
+import { api } from '../services/api';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -35,6 +37,7 @@ export default function InteractiveMap({
   boqModels = [],
   categories = [],
   onUpdatePosition,
+  onUpdateDevice,
   onOpenTroubleshoot,
   onCreateFloorPlan,
   onDeleteFloorPlan,
@@ -50,6 +53,126 @@ export default function InteractiveMap({
   const [pingStatus, setPingStatus] = useState(null);
   const [deviceToPlace, setDeviceToPlace] = useState(null);
   const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
+
+  // Device Location Zone & Engineering Notes State
+  const [deviceNotes, setDeviceNotes] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSavedSuccess, setNotesSavedSuccess] = useState(false);
+  const [deviceZone, setDeviceZone] = useState('indoor');
+  const [isSavingZone, setIsSavingZone] = useState(false);
+
+  // Dynamic Blueprint Aspect Ratio State (prevents cropping for portrait, square, or panoramic plans)
+  const [planDimensions, setPlanDimensions] = useState({ width: 1200, height: 800 });
+
+  // Auto-fit function that ensures 100% of the blueprint is visible on screen with zero clipping
+  const autoFitBlueprint = useCallback((customWidth, customHeight) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const vpWidth = vp.clientWidth || 800;
+    const vpHeight = vp.clientHeight || 560;
+
+    const bWidth = customWidth || planDimensions.width || 1200;
+    const bHeight = customHeight || planDimensions.height || 800;
+
+    // 40px safe margin around all edges
+    const pad = 48;
+    const scaleX = (vpWidth - pad) / bWidth;
+    const scaleY = (vpHeight - pad) / bHeight;
+    const fitScale = Math.min(scaleX, scaleY);
+    const safeZoom = Math.max(0.12, Math.min(1.0, Number(fitScale.toFixed(2))));
+
+    setZoom(safeZoom);
+    setPan({ x: 0, y: 0 });
+  }, [planDimensions]);
+
+  // Update plan dimensions when active plan image loads and auto-fit to screen
+  const handleBlueprintImageLoad = (e) => {
+    const nw = e.target.naturalWidth;
+    const nh = e.target.naturalHeight;
+    if (!nw || !nh) return;
+    const baseWidth = 1200;
+    let w = baseWidth;
+    let h = Math.round((nh / nw) * baseWidth);
+    if (h > 950) {
+      h = 950;
+      w = Math.round((nw / nh) * 950);
+    }
+    setPlanDimensions({ width: w, height: h });
+    autoFitBlueprint(w, h);
+  };
+
+  useEffect(() => {
+    if (!activePlan?.image_url) return;
+    const img = new Image();
+    img.onload = () => {
+      const nw = img.naturalWidth || 1200;
+      const nh = img.naturalHeight || 800;
+      const baseWidth = 1200;
+      let w = baseWidth;
+      let h = Math.round((nh / nw) * baseWidth);
+      if (h > 950) {
+        h = 950;
+        w = Math.round((nw / nh) * 950);
+      }
+      setPlanDimensions({ width: w, height: h });
+      autoFitBlueprint(w, h);
+    };
+    img.src = activePlan.image_url;
+  }, [activePlan?.id, activePlan?.image_url, autoFitBlueprint]);
+
+  useEffect(() => {
+    if (selectedDevice) {
+      setDeviceNotes(selectedDevice.notes || '');
+      setDeviceZone(selectedDevice.placement_zone || 'indoor');
+      setNotesSavedSuccess(false);
+    }
+  }, [selectedDevice?.id, selectedDevice?.notes, selectedDevice?.placement_zone]);
+
+  const handleUpdateZone = async (newZone) => {
+    if (!selectedDevice || newZone === deviceZone || isSavingZone) return;
+    try {
+      setIsSavingZone(true);
+      setDeviceZone(newZone);
+      const updatedPayload = {
+        ...selectedDevice,
+        placement_zone: newZone,
+      };
+      if (onUpdateDevice) {
+        await onUpdateDevice(selectedDevice.id, updatedPayload);
+      } else {
+        await api.updateDevice(selectedDevice.id, updatedPayload);
+      }
+      setSelectedDevice((prev) => (prev ? { ...prev, placement_zone: newZone } : prev));
+    } catch (err) {
+      alert(err.message || 'Failed to update location zone');
+      setDeviceZone(selectedDevice.placement_zone || 'indoor');
+    } finally {
+      setIsSavingZone(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedDevice || isSavingNotes) return;
+    try {
+      setIsSavingNotes(true);
+      const updatedPayload = {
+        ...selectedDevice,
+        notes: deviceNotes,
+      };
+      if (onUpdateDevice) {
+        await onUpdateDevice(selectedDevice.id, updatedPayload);
+      } else {
+        await api.updateDevice(selectedDevice.id, updatedPayload);
+      }
+      setSelectedDevice((prev) => (prev ? { ...prev, notes: deviceNotes } : prev));
+      setNotesSavedSuccess(true);
+      setTimeout(() => setNotesSavedSuccess(false), 2500);
+    } catch (err) {
+      alert(err.message || 'Failed to save engineering note');
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
 
   // Smooth Pan & Zoom State (60fps hardware accelerated)
   const [zoom, setZoom] = useState(1);
@@ -99,41 +222,27 @@ export default function InteractiveMap({
   // Devices not yet placed on this floor plan
   const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
 
-  // Reset zoom & pan to 1:1 center
+  // Fit entire blueprint to screen (100% visible, zero edge-cropping)
   const handleResetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    autoFitBlueprint();
   };
 
   // Zoom controls
   const handleZoomIn = () => {
-    setZoom((z) => Math.min(5.0, Number((z + 0.25).toFixed(2))));
+    setZoom((z) => Math.min(6.0, Number((z + 0.20).toFixed(2))));
   };
 
   const handleZoomOut = () => {
-    setZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))));
+    setZoom((z) => Math.max(0.12, Number((z - 0.15).toFixed(2))));
   };
 
-  // Smooth mouse wheel zoom with cursor centering
+  // Smooth mouse wheel zoom
   const handleWheel = (e) => {
     e.preventDefault();
-    const container = viewportRef.current?.getBoundingClientRect();
-    if (!container) return;
-
-    const mouseX = e.clientX - container.left;
-    const mouseY = e.clientY - container.top;
-
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newZoom = Math.max(0.5, Math.min(5.0, Number((zoom * zoomFactor).toFixed(2))));
-
+    const newZoom = Math.max(0.12, Math.min(6.0, Number((zoom * zoomFactor).toFixed(2))));
     if (Math.abs(newZoom - zoom) < 0.005) return;
-
-    // Anchor point calculation
-    const newPanX = mouseX - ((mouseX - pan.x) * newZoom) / zoom;
-    const newPanY = mouseY - ((mouseY - pan.y) * newZoom) / zoom;
-
     setZoom(newZoom);
-    setPan({ x: Math.round(newPanX), y: Math.round(newPanY) });
   };
 
   // Drag Panning Handlers
@@ -373,9 +482,9 @@ export default function InteractiveMap({
                 <button
                   onClick={handleResetView}
                   className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 transition"
-                  title={isKu ? 'ڕێکخستنەوەی زووم' : 'Reset View (100%)'}
+                  title={isKu ? 'پیشاندانی هەموو نەخشەکە بە تەواوی لەسەر شاشە' : 'Fit Entire Blueprint to Screen (100% visible)'}
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  <Maximize2 className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -400,31 +509,39 @@ export default function InteractiveMap({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
-            className={`relative overflow-hidden bg-slate-950 border border-slate-800 rounded-2xl min-h-[540px] flex items-center justify-center p-2 shadow-2xl ${
+            className={`relative overflow-hidden bg-slate-950 border border-slate-800 rounded-2xl min-h-[560px] h-[640px] shadow-2xl ${
               isDragging ? 'cursor-grabbing' : deviceToPlace ? 'cursor-crosshair' : 'cursor-grab'
             }`}
           >
             {activePlan ? (
               <div
                 style={{
-                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${zoom})`,
-                  transformOrigin: '0 0',
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0px) scale(${zoom})`,
+                  transformOrigin: 'center center',
                   willChange: 'transform',
                 }}
-                className="relative transition-transform duration-75 select-none"
+                className="transition-transform duration-75 select-none"
               >
-                {/* Floor Plan Architectural Graphic Container */}
+                {/* Floor Plan Architectural Graphic Container (Full uncropped blueprint view) */}
                 <div
                   ref={blueprintGraphicRef}
-                  className="relative w-[1000px] h-[625px] rounded-xl overflow-hidden shadow-2xl bg-slate-900 border border-slate-800/80"
+                  style={{
+                    width: `${planDimensions.width}px`,
+                    height: `${planDimensions.height}px`,
+                  }}
+                  className="relative rounded-xl overflow-hidden shadow-2xl bg-white border border-slate-700/80"
                 >
                   <img
                     src={activePlan.image_url}
                     alt={activePlan.name}
                     draggable={false}
-                    className="w-full h-full object-cover filter brightness-90 contrast-105 pointer-events-none select-none"
+                    onLoad={handleBlueprintImageLoad}
+                    className="w-full h-full object-contain filter brightness-95 contrast-105 pointer-events-none select-none block"
                   />
-                  <div className="absolute inset-0 bg-slate-950/20 backdrop-contrast-125 pointer-events-none" />
+                  <div className="absolute inset-0 bg-slate-950/5 pointer-events-none" />
 
                   {/* Architectural Grid Overlay */}
                   <div
@@ -737,6 +854,112 @@ export default function InteractiveMap({
                 >
                   {selectedDevice.installation_status}
                 </span>
+              </div>
+
+              {/* Location Zone Selector (Indoor / Outdoor / Server Rack) */}
+              <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{isKu ? 'دیاری کردنی شوێن' : 'Location Zone'}</span>
+                  </span>
+                  {isSavingZone && (
+                    <span className="text-[10px] text-blue-400 animate-pulse font-mono">
+                      {isKu ? 'تۆمارکردن...' : 'Saving...'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateZone('indoor')}
+                    disabled={isSavingZone}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
+                      deviceZone === 'indoor'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
+                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    <span>🏠</span>
+                    <span>{isKu ? 'ئیندۆر' : 'Indoor'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateZone('outdoor')}
+                    disabled={isSavingZone}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
+                      deviceZone === 'outdoor'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30 font-bold border border-emerald-400'
+                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    <span>🌳</span>
+                    <span>{isKu ? 'ئاوتدۆر' : 'Outdoor'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateZone('rack')}
+                    disabled={isSavingZone}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
+                      deviceZone === 'rack'
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30 font-bold border border-purple-400'
+                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    <span>🗄️</span>
+                    <span>{isKu ? 'ڕاک' : 'Rack'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Engineering Notes Section */}
+              <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{isKu ? 'تێبینی ئەندازیاری' : 'Engineering Notes'}</span>
+                  </label>
+                  {notesSavedSuccess && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 animate-fadeIn">
+                      <Check className="w-3 h-3" />
+                      <span>{isKu ? 'تێبینی سەیڤ کرا!' : 'Note Saved!'}</span>
+                    </span>
+                  )}
+                </div>
+
+                <textarea
+                  rows={3}
+                  value={deviceNotes}
+                  onChange={(e) => {
+                    setDeviceNotes(e.target.value);
+                    setNotesSavedSuccess(false);
+                  }}
+                  placeholder={
+                    isKu
+                      ? 'تێبینی لەسەر ئەم ئامێرە لێرە بنووسە (بۆ نموونە: شوێنی دانان، ژمارەی کێبڵ، بەرزی، لای دەرگا...)'
+                      : 'Write engineering notes here (e.g. drop #14, mounting height, PoE requirement)...'
+                  }
+                  className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none resize-none transition"
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isSavingNotes || deviceNotes === (selectedDevice.notes || '')}
+                    onClick={handleSaveNotes}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white shadow transition active:scale-95"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      {isSavingNotes
+                        ? (isKu ? 'تۆمارکردن...' : 'Saving...')
+                        : (isKu ? 'سەیڤکردنی تێبینی' : 'Save Note')}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {/* Specs Grid */}

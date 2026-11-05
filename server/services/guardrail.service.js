@@ -48,30 +48,9 @@ export function validateDeviceGuardrails(deviceData, modelData, floorPlan, exist
     }
   }
 
-  // 2. Zone Compatibility Guardrail (Indoor vs Outdoor vs Safe Room)
-  if (floorPlan) {
-    // If the floor plan is outdoor, indoor-only equipment cannot be placed there!
-    if (floorPlan.zone_type === 'outdoor' && deviceData.placement_zone === 'indoor') {
-      throw new GuardrailError(
-        `[Smart Guardrail Error]: Indoor-rated device "${modelData?.brand || ''} ${modelData?.model || ''}" cannot be placed in outdoor zone "${floorPlan.name}" (Ingress/weather protection violation).`,
-        `[ئاگاداری کەشوهەوا]: ئەم ئامێرە تەنها بۆ ناوماڵ دروستکراوە و ناتوانیت لە دەرەوە "${floorPlan.name_ku || floorPlan.name}" داینێیت، چونکە بەرگەی باران و خۆر ناگرێت!`,
-        'ZONE_MISMATCH_OUTDOOR',
-        { allowedZones: modelData?.allowed_zones, targetMapZone: floorPlan.zone_type }
-      );
-    }
-
-    // Check against BOQ model allowed zones if defined
-    if (modelData?.allowed_zones && modelData.allowed_zones.length > 0) {
-      if (!modelData.allowed_zones.includes(floorPlan.zone_type)) {
-        throw new GuardrailError(
-          `[Smart Guardrail Error]: Equipment "${modelData.brand} ${modelData.model}" is only certified for [${modelData.allowed_zones.join(', ')}]. It cannot be installed in "${floorPlan.zone_type}" zones.`,
-          `[هەڵەی ڕێپێدان]: ئەم مۆدێلە تەنها بۆ شوێنەکانی [${modelData.allowed_zones.join(', ')}] پەسەند کراوە و ناتوانرێت لە ناوچەی "${floorPlan.zone_type}" دابنرێت.`,
-          'CERTIFIED_ZONE_RESTRICTION',
-          { allowedZones: modelData.allowed_zones, floorPlanZone: floorPlan.zone_type }
-        );
-      }
-    }
-  }
+  // 2. Zone Specification (Indoor vs Outdoor)
+  // Indoor / Outdoor specifies physical location and zone tagging without blocking placement.
+  // Physical placement on maps adapts to the user's chosen location or target map.
 
   // 3. Duplicate IP Address Guardrail
   if (deviceData.ip_address && deviceData.ip_address.trim() !== '') {

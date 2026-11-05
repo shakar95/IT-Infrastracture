@@ -169,7 +169,17 @@ router.post('/', async (req, res) => {
     };
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('devices').insert([payload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+      let { data, error } = await supabase.from('devices').insert([payload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+
+      // Graceful fallback if devices table does not yet have 'project_id' column in Supabase schema cache
+      if (error && (error.message?.includes('project_id') || error.code === 'PGRST204')) {
+        console.warn('Supabase devices table missing project_id column, retrying insert without project_id...');
+        const { project_id, ...payloadWithoutProject } = payload;
+        const retryResult = await supabase.from('devices').insert([payloadWithoutProject]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
       if (error) {
         if (error.message.includes('Guardrail Error') || error.message.includes('IP Conflict') || error.message.includes('Port Conflict')) {
           return res.status(422).json({
@@ -322,7 +332,7 @@ router.patch('/:id/status', async (req, res) => {
 router.patch('/:id/position', async (req, res) => {
   try {
     const { id } = req.params;
-    const { floor_plan_id, pos_x, pos_y } = req.body;
+    const { floor_plan_id, pos_x, pos_y, placement_zone, notes } = req.body;
 
     let device, model, targetFloorPlan, allDevices;
 
@@ -344,26 +354,36 @@ router.patch('/:id/position', async (req, res) => {
       allDevices = mockDevices;
     }
 
+    const determinedZone = placement_zone || (targetFloorPlan ? targetFloorPlan.zone_type : device.placement_zone) || 'indoor';
+
     const candidate = {
       ...device,
       floor_plan_id,
       pos_x,
       pos_y,
-      placement_zone: targetFloorPlan ? targetFloorPlan.zone_type : device.placement_zone,
+      placement_zone: determinedZone,
     };
+    if (notes !== undefined) {
+      candidate.notes = notes;
+    }
 
     validateDeviceGuardrails(candidate, model, targetFloorPlan, allDevices);
+
+    const updatePayload = {
+      floor_plan_id,
+      pos_x,
+      pos_y,
+      placement_zone: determinedZone,
+      updated_at: new Date().toISOString(),
+    };
+    if (notes !== undefined) {
+      updatePayload.notes = notes;
+    }
 
     if (isSupabaseConfigured) {
       const { data, error } = await supabase
         .from('devices')
-        .update({
-          floor_plan_id,
-          pos_x,
-          pos_y,
-          placement_zone: targetFloorPlan ? targetFloorPlan.zone_type : device.placement_zone,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', id)
         .select()
         .single();
@@ -384,8 +404,9 @@ router.patch('/:id/position', async (req, res) => {
     device.floor_plan_id = floor_plan_id;
     device.pos_x = pos_x;
     device.pos_y = pos_y;
-    if (targetFloorPlan) {
-      device.placement_zone = targetFloorPlan.zone_type;
+    device.placement_zone = determinedZone;
+    if (notes !== undefined) {
+      device.notes = notes;
     }
     device.updated_at = new Date().toISOString();
 

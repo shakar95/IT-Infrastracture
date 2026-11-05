@@ -86,7 +86,15 @@ router.post('/', async (req, res) => {
     };
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('boq_models').insert([payload]).select('*, categories(*)').single();
+      let { data, error } = await supabase.from('boq_models').insert([payload]).select('*, categories(*)').single();
+      // Graceful fallback if boq_models table does not yet have 'project_id' column in Supabase schema cache
+      if (error && (error.message?.includes('project_id') || error.code === 'PGRST204')) {
+        console.warn('Supabase boq_models table missing project_id column, retrying insert without project_id...');
+        const { project_id, ...payloadWithoutProject } = payload;
+        const retryResult = await supabase.from('boq_models').insert([payloadWithoutProject]).select('*, categories(*)').single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
       if (!error && data) return res.status(201).json(data);
     }
 

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS categories (
 -- 5. BOQ MODELS CATALOG TABLE
 CREATE TABLE IF NOT EXISTS boq_models (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id TEXT DEFAULT 'proj-sitak',
     category_id UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
     brand TEXT NOT NULL,
     model TEXT NOT NULL,
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS boq_models (
 -- 6. FLOOR PLANS / TOPOLOGY MAPS TABLE
 CREATE TABLE IF NOT EXISTS floor_plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id TEXT DEFAULT 'proj-sitak',
     name TEXT NOT NULL,
     name_ku TEXT NOT NULL,
     zone_type zone_type NOT NULL DEFAULT 'indoor',
@@ -91,6 +93,7 @@ CREATE TABLE IF NOT EXISTS floor_plans (
 -- 7. INDIVIDUAL PROVISIONED DEVICES TABLE
 CREATE TABLE IF NOT EXISTS devices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id TEXT DEFAULT 'proj-sitak',
     boq_model_id UUID NOT NULL REFERENCES boq_models(id) ON DELETE RESTRICT,
     custom_label_id TEXT NOT NULL UNIQUE, -- e.g. AP-GF-01, CCTV-GATE-01, CRESTRON-CINEMA-01
     serial_number TEXT UNIQUE,
@@ -162,18 +165,11 @@ BEGIN
         RAISE EXCEPTION '[Guardrail Error / هەڵەی شوێن]: Rack-mounted device cannot be placed outside a Server Rack zone! (ئەم ئامێرە مۆدی ڕاکە و پێویستە تەنها لە ڕاکدا دابنرێت)';
     END IF;
 
-    -- Validate Floor Plan Zone compatibility if floor_plan_id is set
-    IF NEW.floor_plan_id IS NOT NULL THEN
+    -- Validate Floor Plan Zone (Informational: specifies physical location, does not block)
+    IF NEW.floor_plan_id IS NOT NULL AND NEW.placement_zone IS NULL THEN
         SELECT zone_type INTO fp_zone FROM floor_plans WHERE id = NEW.floor_plan_id;
-        
-        IF fp_zone IS NOT NULL AND NEW.placement_zone != fp_zone THEN
-            RAISE EXCEPTION '[Guardrail Error / هەڵەی شوێن]: Zone mismatch! Device is set to % but floor plan is % (شوێنی ئامێرەکە گونجاو نییە لەگەڵ ئەم نەخشەیە)', 
-                NEW.placement_zone, fp_zone;
-        END IF;
-
-        IF model_allowed_zones IS NOT NULL AND NOT (fp_zone = ANY(model_allowed_zones)) THEN
-            RAISE EXCEPTION '[Guardrail Error / هەڵەی شوێن]: This equipment is not certified for % zones! (ئەم مۆدێلە لە باری گونجاودا نییە بۆ دانان لە شوێنی %)', 
-                fp_zone, fp_zone;
+        IF fp_zone IS NOT NULL THEN
+            NEW.placement_zone := fp_zone;
         END IF;
     END IF;
 

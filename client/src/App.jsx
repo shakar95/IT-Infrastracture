@@ -490,6 +490,7 @@ export default function App() {
                 boqModels={boqModels}
                 categories={categories}
                 onUpdatePosition={handleUpdatePosition}
+                onUpdateDevice={handleUpdateDevice}
                 onOpenTroubleshoot={handleOpenTroubleshoot}
                 onCreateFloorPlan={handleCreateFloorPlan}
                 onDeleteFloorPlan={handleDeleteFloorPlan}

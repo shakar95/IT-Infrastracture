@@ -41,7 +41,7 @@ const ensurePdfJs = async () => {
   });
 };
 
-const compressImageFile = (file, maxWidth = 2400, maxHeight = 1800, quality = 0.88) => {
+const compressImageFile = (file, maxDimension = 3600, quality = 0.92) => {
   return new Promise((resolve, reject) => {
     if (!file) return reject(new Error('Invalid image'));
     const reader = new FileReader();
@@ -52,13 +52,11 @@ const compressImageFile = (file, maxWidth = 2400, maxHeight = 1800, quality = 0.
       img.onload = () => {
         let width = img.width;
         let height = img.height;
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-        if (height > maxHeight) {
-          width = Math.round((width * maxHeight) / height);
-          height = maxHeight;
+        // Strictly preserve full aspect ratio with zero edge cropping
+        if (width > maxDimension || height > maxDimension) {
+          const ratio = Math.min(maxDimension / width, maxDimension / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
         }
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -102,18 +100,26 @@ export default function AddFloorPlanModal({
 
   if (!isOpen) return null;
 
-  // Render a specific page of the loaded PDF
+  // Render a specific page of the loaded PDF (Full aspect ratio, zero edge-clipping)
   const renderPdfPage = async (pdfDoc, pageNum) => {
     try {
       const page = await pdfDoc.getPage(pageNum);
-      // High-resolution scale for sharp blueprint vector lines
-      const viewport = page.getViewport({ scale: 2.2 });
+      // Unscaled base dimensions of the architectural drawing
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+
+      // Calculate scale so entire page fits in high-DPI canvas without cropping any edges
+      const maxCanvasDim = 3600;
+      const calculatedScale = Math.min(2.5, maxCanvasDim / Math.max(unscaledViewport.width, unscaledViewport.height));
+      const safeScale = Math.max(1.0, calculatedScale);
+
+      const viewport = page.getViewport({ scale: safeScale });
       const canvas = document.createElement('canvas');
-      canvas.width = Math.min(3600, viewport.width);
-      canvas.height = Math.min(3600, viewport.height);
+      // Ceiling viewport dimensions to guarantee no edge pixel is cropped
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
       const ctx = canvas.getContext('2d');
 
-      // White architectural background
+      // Clean white architectural drawing background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -122,8 +128,7 @@ export default function AddFloorPlanModal({
         viewport,
       }).promise;
 
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-      return dataUrl;
+      return canvas.toDataURL('image/jpeg', 0.92);
     } catch (err) {
       console.error('Error rendering PDF page:', err);
       throw err;
@@ -208,7 +213,7 @@ export default function AddFloorPlanModal({
         // Standard Image File (.png, .jpg, .svg, .webp)
         setLoadedPdfDoc(null);
         setPdfTotalPages(0);
-        const compressedDataUrl = await compressImageFile(file, 2400, 1800, 0.88);
+        const compressedDataUrl = await compressImageFile(file, 3600, 0.92);
         setImagePreview(compressedDataUrl);
 
         try {
@@ -330,11 +335,11 @@ export default function AddFloorPlanModal({
             <div className="relative border-2 border-dashed border-slate-700 hover:border-blue-500/70 rounded-2xl p-4 bg-slate-950/70 transition flex flex-col items-center justify-center text-center min-h-[170px] overflow-hidden">
               {imagePreview ? (
                 <div className="relative w-full space-y-2">
-                  <div className="relative max-h-[220px] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 flex items-center justify-center">
+                  <div className="relative min-h-[200px] max-h-[320px] w-full overflow-hidden rounded-xl border border-slate-700 bg-white flex items-center justify-center p-2 shadow-inner">
                     <img
                       src={imagePreview}
                       alt="Blueprint preview"
-                      className="w-full max-h-[220px] object-contain rounded-xl mx-auto"
+                      className="max-h-[300px] max-w-full w-auto h-auto object-contain rounded-lg mx-auto shadow-sm"
                     />
                   </div>
 

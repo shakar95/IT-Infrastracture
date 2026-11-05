@@ -12,6 +12,10 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     exit
 }
 
+Write-Host "`nStaging and committing latest changes..." -ForegroundColor Yellow
+& $gitExe add -A
+& $gitExe commit -m "Fix: Blueprint auto-fit to screen with zero edge-cropping, notes and zone support"
+
 Write-Host "`nPushing main branch to GitHub..." -ForegroundColor Yellow
 & $gitExe push "https://shakaralii:${token}@github.com/shakaralii/IT-Infrastracture.git" main
 
