@@ -82,6 +82,7 @@ export default function InteractiveMap({
   const hasDraggedSignificantlyRef = useRef(false);
   const viewportRef = useRef(null);
   const blueprintGraphicRef = useRef(null);
+  const lastFittedPlanIdRef = useRef(null);
 
   // 3. Derived Variables (Available to all functions and effects below)
   const activePlan = floorPlans.find((fp) => fp.id === selectedPlanId) || floorPlans[0];
@@ -114,7 +115,7 @@ export default function InteractiveMap({
     setPan({ x: 0, y: 0 });
   }, [planDimensions]);
 
-  // Update plan dimensions when active plan image loads and auto-fit to screen
+  // Update plan dimensions when active plan image loads and auto-fit to screen ONCE
   const handleBlueprintImageLoad = (e) => {
     const nw = e.target.naturalWidth;
     const nh = e.target.naturalHeight;
@@ -127,7 +128,12 @@ export default function InteractiveMap({
       w = Math.round((nw / nh) * 950);
     }
     setPlanDimensions({ width: w, height: h });
-    autoFitBlueprint(w, h);
+
+    // Only auto-fit when this floor plan hasn't been fitted yet (never reset user's manual zoom!)
+    if (lastFittedPlanIdRef.current !== activePlan?.id) {
+      lastFittedPlanIdRef.current = activePlan?.id;
+      autoFitBlueprint(w, h);
+    }
   };
 
   // 5. Effects
@@ -151,25 +157,30 @@ export default function InteractiveMap({
     }
   }, [floorPlans, selectedPlanId]);
 
-  // Auto-fit blueprint whenever active plan image changes
+  // Auto-fit blueprint ONCE whenever active plan changes
   useEffect(() => {
-    if (!activePlan?.image_url) return;
-    const img = new Image();
-    img.onload = () => {
-      const nw = img.naturalWidth || 1200;
-      const nh = img.naturalHeight || 800;
-      const baseWidth = 1200;
-      let w = baseWidth;
-      let h = Math.round((nh / nw) * baseWidth);
-      if (h > 950) {
-        h = 950;
-        w = Math.round((nw / nh) * 950);
+    if (!activePlan?.id) return;
+    if (lastFittedPlanIdRef.current !== activePlan.id) {
+      lastFittedPlanIdRef.current = activePlan.id;
+      if (activePlan.image_url) {
+        const img = new Image();
+        img.onload = () => {
+          const nw = img.naturalWidth || 1200;
+          const nh = img.naturalHeight || 800;
+          const baseWidth = 1200;
+          let w = baseWidth;
+          let h = Math.round((nh / nw) * baseWidth);
+          if (h > 950) {
+            h = 950;
+            w = Math.round((nw / nh) * 950);
+          }
+          setPlanDimensions({ width: w, height: h });
+          autoFitBlueprint(w, h);
+        };
+        img.src = activePlan.image_url;
       }
-      setPlanDimensions({ width: w, height: h });
-      autoFitBlueprint(w, h);
-    };
-    img.src = activePlan.image_url;
-  }, [activePlan?.id, activePlan?.image_url, autoFitBlueprint]);
+    }
+  }, [activePlan?.id, activePlan?.image_url]);
 
   // Non-passive wheel handler: Smooth, guaranteed e.preventDefault() to stop page scroll, supports mouse & trackpad
   const handleWheelZoom = useCallback((e) => {
@@ -253,18 +264,29 @@ export default function InteractiveMap({
     }
   };
 
-  // Reset zoom & pan to fit entire blueprint cleanly
-  const handleResetView = () => {
+  // Zoom controls (multiplicative, natural scaling with event stopping)
+  const handleZoomIn = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setZoom((prev) => Math.min(6.0, Number((prev * 1.25).toFixed(2))));
+  };
+
+  const handleZoomOut = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setZoom((prev) => Math.max(0.12, Number((prev * 0.80).toFixed(2))));
+  };
+
+  const handleResetView = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     autoFitBlueprint();
-  };
-
-  // Zoom controls (multiplicative, natural scaling)
-  const handleZoomIn = () => {
-    setZoom((z) => Math.min(6.0, Number((z * 1.20).toFixed(2))));
-  };
-
-  const handleZoomOut = () => {
-    setZoom((z) => Math.max(0.12, Number((z * 0.82).toFixed(2))));
   };
 
   // Drag Panning Handlers
@@ -596,7 +618,7 @@ export default function InteractiveMap({
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
-                  transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
                   transformOrigin: 'center center',
                   willChange: 'transform',
                 }}
