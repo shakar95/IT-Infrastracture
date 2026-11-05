@@ -48,6 +48,7 @@ export default function InteractiveMap({
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
 
+  // 1. All State Hooks
   const [selectedPlanId, setSelectedPlanId] = useState(initialSelectedPlanId || floorPlans[0]?.id || '');
   const [selectedDevice, setSelectedDevice] = useState(initialSelectedDevice || null);
   const [pingStatus, setPingStatus] = useState(null);
@@ -61,10 +62,39 @@ export default function InteractiveMap({
   const [deviceZone, setDeviceZone] = useState('indoor');
   const [isSavingZone, setIsSavingZone] = useState(false);
 
-  // Dynamic Blueprint Aspect Ratio State (prevents cropping for portrait, square, or panoramic plans)
+  // Dynamic Blueprint Aspect Ratio State
   const [planDimensions, setPlanDimensions] = useState({ width: 1200, height: 800 });
 
-  // Auto-fit function that ensures 100% of the blueprint is visible on screen with zero clipping
+  // Pan & Zoom State (60fps hardware accelerated)
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Quick Click-to-Place Popover State
+  const [activeClickCoord, setActiveClickCoord] = useState(null); // { x: 45.2, y: 60.5 }
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [quickFilterTab, setQuickFilterTab] = useState('unplaced'); // 'unplaced' | 'all'
+  const [placementFlash, setPlacementFlash] = useState(null); // { x, y }
+
+  // 2. All Ref Hooks
+  const dragOriginRef = useRef({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const hasDraggedSignificantlyRef = useRef(false);
+  const viewportRef = useRef(null);
+  const blueprintGraphicRef = useRef(null);
+
+  // 3. Derived Variables (Available to all functions and effects below)
+  const activePlan = floorPlans.find((fp) => fp.id === selectedPlanId) || floorPlans[0];
+
+  // Devices placed on this floor plan
+  const pinnedDevices = devices.filter(
+    (d) => d.floor_plan_id === activePlan?.id && d.pos_x !== null && d.pos_y !== null
+  );
+
+  // Devices not yet placed on this floor plan
+  const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
+
+  // 4. Auto-fit Callback (Guaranteed that viewportRef, planDimensions, setZoom, setPan are all ready)
   const autoFitBlueprint = useCallback((customWidth, customHeight) => {
     const vp = viewportRef.current;
     if (!vp) return;
@@ -74,7 +104,6 @@ export default function InteractiveMap({
     const bWidth = customWidth || planDimensions.width || 1200;
     const bHeight = customHeight || planDimensions.height || 800;
 
-    // 40px safe margin around all edges
     const pad = 48;
     const scaleX = (vpWidth - pad) / bWidth;
     const scaleY = (vpHeight - pad) / bHeight;
@@ -101,6 +130,28 @@ export default function InteractiveMap({
     autoFitBlueprint(w, h);
   };
 
+  // 5. Effects
+  // Sync initial selections
+  useEffect(() => {
+    if (initialSelectedPlanId) {
+      setSelectedPlanId(initialSelectedPlanId);
+    }
+  }, [initialSelectedPlanId]);
+
+  useEffect(() => {
+    if (initialSelectedDevice) {
+      setSelectedDevice(initialSelectedDevice);
+    }
+  }, [initialSelectedDevice]);
+
+  // Keep selectedPlanId valid if plans change or one is deleted
+  useEffect(() => {
+    if (!floorPlans.some((fp) => fp.id === selectedPlanId) && floorPlans.length > 0) {
+      setSelectedPlanId(floorPlans[0].id);
+    }
+  }, [floorPlans, selectedPlanId]);
+
+  // Auto-fit blueprint whenever active plan image changes
   useEffect(() => {
     if (!activePlan?.image_url) return;
     const img = new Image();
@@ -120,6 +171,7 @@ export default function InteractiveMap({
     img.src = activePlan.image_url;
   }, [activePlan?.id, activePlan?.image_url, autoFitBlueprint]);
 
+  // Sync selected device notes & zone
   useEffect(() => {
     if (selectedDevice) {
       setDeviceNotes(selectedDevice.notes || '');
@@ -128,6 +180,7 @@ export default function InteractiveMap({
     }
   }, [selectedDevice?.id, selectedDevice?.notes, selectedDevice?.placement_zone]);
 
+  // Handlers for Zone & Notes
   const handleUpdateZone = async (newZone) => {
     if (!selectedDevice || newZone === deviceZone || isSavingZone) return;
     try {
@@ -172,59 +225,6 @@ export default function InteractiveMap({
     } finally {
       setIsSavingNotes(false);
     }
-  };
-
-  // Smooth Pan & Zoom State (60fps hardware accelerated)
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-
-  // Quick Click-to-Place Popover State
-  const [activeClickCoord, setActiveClickCoord] = useState(null); // { x: 45.2, y: 60.5 }
-  const [quickSearchQuery, setQuickSearchQuery] = useState('');
-  const [quickFilterTab, setQuickFilterTab] = useState('unplaced'); // 'unplaced' | 'all'
-  const [placementFlash, setPlacementFlash] = useState(null); // { x, y }
-
-  // Drag tracking refs to distinguish click from pan
-  const dragOriginRef = useRef({ x: 0, y: 0 });
-  const panStartRef = useRef({ x: 0, y: 0 });
-  const hasDraggedSignificantlyRef = useRef(false);
-  const viewportRef = useRef(null);
-  const blueprintGraphicRef = useRef(null);
-
-  // Sync initial selections
-  useEffect(() => {
-    if (initialSelectedPlanId) {
-      setSelectedPlanId(initialSelectedPlanId);
-    }
-  }, [initialSelectedPlanId]);
-
-  useEffect(() => {
-    if (initialSelectedDevice) {
-      setSelectedDevice(initialSelectedDevice);
-    }
-  }, [initialSelectedDevice]);
-
-  // Keep selectedPlanId valid if plans change or one is deleted
-  useEffect(() => {
-    if (!floorPlans.some((fp) => fp.id === selectedPlanId) && floorPlans.length > 0) {
-      setSelectedPlanId(floorPlans[0].id);
-    }
-  }, [floorPlans, selectedPlanId]);
-
-  const activePlan = floorPlans.find((fp) => fp.id === selectedPlanId) || floorPlans[0];
-
-  // Devices placed on this floor plan
-  const pinnedDevices = devices.filter(
-    (d) => d.floor_plan_id === activePlan?.id && d.pos_x !== null && d.pos_y !== null
-  );
-
-  // Devices not yet placed on this floor plan
-  const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
-
-  // Fit entire blueprint to screen (100% visible, zero edge-cropping)
-  const handleResetView = () => {
-    autoFitBlueprint();
   };
 
   // Zoom controls
