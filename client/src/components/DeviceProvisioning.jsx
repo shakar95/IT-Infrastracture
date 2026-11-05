@@ -22,6 +22,7 @@ import {
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
+import { getIctDeviceIcon } from '../utils/ictIcons';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -285,6 +286,9 @@ export default function DeviceProvisioning({
             <tbody className="divide-y divide-slate-800/60">
               {filteredDevices.map((dev) => {
                 const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                const DevIcon = getIctDeviceIcon(dev, model, category);
+
                 return (
                   <tr key={dev.id} className="hover:bg-slate-850/50 transition">
                     <td
@@ -292,8 +296,10 @@ export default function DeviceProvisioning({
                       title={isKu ? 'کلیک بکە بۆ پیشاندانی هەموو زانیاری، وێنەی گەورە و کەتەلۆگ' : 'Click to inspect full profile, zoomed image & catalog'}
                       className="px-4 py-3 font-mono font-bold text-white whitespace-nowrap cursor-pointer hover:text-blue-400 transition group/label"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 group-hover/label:scale-125 transition" />
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-blue-600/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+                          <DevIcon className="w-3.5 h-3.5" />
+                        </div>
                         <span className="underline-offset-4 group-hover/label:underline">{dev.custom_label_id}</span>
                         <Eye className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover/label:opacity-100 transition ml-1" />
                       </div>

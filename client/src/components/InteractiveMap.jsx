@@ -31,6 +31,7 @@ import {
 import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
 import { api } from '../services/api';
+import { getIctDeviceIcon } from '../utils/ictIcons';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -884,11 +885,12 @@ export default function InteractiveMap({
                     </div>
                   )}
 
-                  {/* Interactive Device Pins */}
+                  {/* Interactive Device Pins with Dynamic ICT Icons */}
                   {pinnedDevices.map((dev) => {
                     const model = boqModels.find((m) => m.id === dev.boq_model_id);
                     const category = model ? categories.find((c) => c.id === model.category_id) : null;
                     const isSelected = selectedDevice?.id === dev.id;
+                    const DevIcon = getIctDeviceIcon(dev, model, category);
 
                     const statusColor =
                       dev.installation_status === 'Verified'
@@ -909,32 +911,40 @@ export default function InteractiveMap({
                           setActiveClickCoord(null);
                         }}
                         style={{ left: `${dev.pos_x}%`, top: `${dev.pos_y}%` }}
-                        className="device-pin absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20"
+                        className="device-pin absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer group z-20 flex flex-col items-center select-none"
                       >
-                        {/* Status Ring & Icon */}
+                        {/* Status Ring & ICT Device Icon */}
                         <div
                           className={`w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-125 ${
-                            isSelected ? 'scale-125' : ''
+                            isSelected ? 'scale-125 ring-4 ring-blue-500/40' : ''
                           }`}
                           style={{
                             backgroundColor: '#0f172a',
                             border: `2.5px solid ${statusColor}`,
-                            boxShadow: isSelected ? `0 0 15px ${statusColor}` : '0 4px 10px rgba(0,0,0,0.5)',
+                            boxShadow: isSelected ? `0 0 18px ${statusColor}` : '0 4px 10px rgba(0,0,0,0.6)',
                           }}
                         >
-                          <span className="text-[10px] font-bold text-white font-mono">
-                            {dev.custom_label_id ? dev.custom_label_id.substring(0, 3) : 'DEV'}
+                          <DevIcon className="w-4 h-4 text-white drop-shadow" />
+                        </div>
+
+                        {/* Persistent High-Contrast Label Pill Under Pin */}
+                        <div className="mt-1 px-1.5 py-0.5 rounded-md bg-slate-950/95 border border-slate-700/80 shadow-md pointer-events-none whitespace-nowrap">
+                          <span className="text-[9px] font-bold font-mono text-slate-200 tracking-tight block leading-none">
+                            {dev.custom_label_id}
                           </span>
                         </div>
 
-                        {/* Tooltip Tag */}
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
-                          <div className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl text-center">
-                            <p className="text-[11px] font-bold font-mono text-white">{dev.custom_label_id}</p>
-                            <p className="text-[9px] text-cyan-400 font-mono">{dev.ip_address || 'No IP'}</p>
-                            <p className="text-[9px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
+                        {/* Rich Hover / Touch Tooltip */}
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
+                          <div className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl text-center space-y-0.5">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <DevIcon className="w-3.5 h-3.5 text-blue-400" />
+                              <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id}</p>
+                            </div>
+                            <p className="text-[10px] text-blue-300 font-mono">{dev.ip_address || 'No IP'}</p>
+                            <p className="text-[10px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
                           </div>
-                          <div className="w-1.5 h-1.5 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
+                          <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
                         </div>
                       </div>
                     );
@@ -1055,28 +1065,35 @@ export default function InteractiveMap({
 
                     return filtered.map((dev) => {
                       const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                      const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                      const DevIcon = getIctDeviceIcon(dev, model, category);
                       const isAlreadyPinned = dev.floor_plan_id && dev.pos_x !== null;
 
                       return (
                         <div
                           key={dev.id}
                           onClick={() => handleAssignDeviceToCoord(dev)}
-                          className="p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition flex items-center justify-between gap-2 group"
+                          className="p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition flex items-center justify-between gap-2.5 group"
                         >
-                          <div className="truncate">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-xs text-white font-mono group-hover:text-blue-400 transition truncate">
-                                {dev.custom_label_id}
-                              </span>
-                              {isAlreadyPinned && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 font-mono">
-                                  {isKu ? 'لەسەر نەخشەیە' : 'Pinned'}
-                                </span>
-                              )}
+                          <div className="flex items-center gap-2.5 min-w-0 truncate">
+                            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 shadow-sm">
+                              <DevIcon className="w-4 h-4" />
                             </div>
-                            <span className="text-[10px] text-slate-400 block truncate">
-                              {model ? `${model.brand} ${model.model}` : 'ELV Hardware'} • {dev.ip_address || 'No IP'}
-                            </span>
+                            <div className="truncate min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs text-white font-mono group-hover:text-blue-400 transition truncate">
+                                  {dev.custom_label_id}
+                                </span>
+                                {isAlreadyPinned && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 font-mono shrink-0">
+                                    {isKu ? 'لەسەر نەخشەیە' : 'Pinned'}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 block truncate">
+                                {model ? `${model.brand} ${model.model}` : 'ELV Hardware'} • {dev.ip_address || 'No IP'}
+                              </span>
+                            </div>
                           </div>
 
                           <button
@@ -1102,20 +1119,33 @@ export default function InteractiveMap({
           {/* Selected Device Inspector Drawer */}
           {selectedDevice ? (
             <div className="bg-slate-900/95 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-                    {t.inspectTitle}
-                  </span>
-                  <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id}</h3>
-                </div>
-                <button
-                  onClick={() => setSelectedDevice(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              {(() => {
+                const model = boqModels.find((m) => m.id === selectedDevice.boq_model_id) || selectedDevice.boq_model;
+                const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                const DevIcon = getIctDeviceIcon(selectedDevice, model, category);
+
+                return (
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 shadow-sm">
+                        <DevIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
+                          {t.inspectTitle} {category ? `• ${isKu ? (category.name_ku || category.name) : category.name}` : ''}
+                        </span>
+                        <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id}</h3>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedDevice(null)}
+                      className="text-slate-400 hover:text-white p-1 rounded-lg"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Hardware Device Photo & Model Name */}
               {(() => {
@@ -1350,6 +1380,8 @@ export default function InteractiveMap({
                 ) : (
                   unpinnedDevices.map((dev) => {
                     const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                    const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                    const DevIcon = getIctDeviceIcon(dev, model, category);
                     const isSelectedForPlacement = deviceToPlace?.id === dev.id;
 
                     return (
@@ -1359,19 +1391,28 @@ export default function InteractiveMap({
                           setDeviceToPlace(isSelectedForPlacement ? null : dev);
                           setActiveClickCoord(null);
                         }}
-                        className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
+                        className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2.5 ${
                           isSelectedForPlacement
                             ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
                             : 'bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300'
                         }`}
                       >
-                        <div>
-                          <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id}</p>
-                          <p className="text-[10px] text-slate-400">
-                            {model ? `${model.brand} ${model.model}` : 'ELV Unit'}
-                          </p>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                            isSelectedForPlacement
+                              ? 'bg-blue-600 text-white border-blue-400'
+                              : 'bg-slate-900 border-slate-800 text-blue-400'
+                          }`}>
+                            <DevIcon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold font-mono text-white truncate">{dev.custom_label_id}</p>
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {model ? `${model.brand} ${model.model}` : 'ELV Unit'}
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-blue-400">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-blue-400 shrink-0">
                           {isSelectedForPlacement ? (isKu ? 'جێگیرکردن...' : 'Placing...') : (isKu ? '+ دانان' : 'Pin +')}
                         </span>
                       </div>
