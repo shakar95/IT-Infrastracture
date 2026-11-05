@@ -18,11 +18,14 @@ import {
   Maximize2,
   Eye,
   Info,
+  Settings2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
+import ZoneEditorModal from './ZoneEditorModal';
 import { getIctDeviceIcon } from '../utils/ictIcons';
+import { useZones } from '../utils/zoneManager';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -40,6 +43,7 @@ export default function DeviceProvisioning({
 }) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
+  const { zones, formatZone } = useZones();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -50,9 +54,7 @@ export default function DeviceProvisioning({
   const [editingDevice, setEditingDevice] = useState(null);
   const [inspectingDevice, setInspectingDevice] = useState(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [customLocations, setCustomLocations] = useState(['indoor', 'outdoor', 'rack', 'safe_room']);
-  const [newLocationInput, setNewLocationInput] = useState('');
-  const [showAddLocationInput, setShowAddLocationInput] = useState(false);
+  const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
 
   // Form State (All fields start empty, placeholders will show guidance)
   const [deviceForm, setDeviceForm] = useState({
@@ -236,10 +238,11 @@ export default function DeviceProvisioning({
           className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500"
         >
           <option value="all">{t.allZones}</option>
-          <option value="indoor">{t.zoneIndoor}</option>
-          <option value="outdoor">{t.zoneOutdoor}</option>
-          <option value="rack">{t.zoneRack}</option>
-          <option value="safe_room">{t.zoneSafeRoom}</option>
+          {zones.map((z) => (
+            <option key={z.id} value={z.id}>
+              {isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}
+            </option>
+          ))}
         </select>
 
         <div className="flex items-center gap-1.5">
@@ -566,72 +569,42 @@ export default function DeviceProvisioning({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-slate-300">{t.placementZoneLabel}</label>
+                    <label className="text-xs font-medium text-slate-300">
+                      {t.placementZoneLabel}
+                      <span className="text-[10px] text-slate-400 font-normal ml-1 mr-1">
+                        ({isKu ? 'دڵخوازانە' : 'Optional'})
+                      </span>
+                    </label>
                     <button
                       type="button"
-                      onClick={() => setShowAddLocationInput(!showAddLocationInput)}
-                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+                      onClick={() => setIsZoneModalOpen(true)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-1 transition"
                     >
-                      {showAddLocationInput ? (isKu ? 'داخستن' : 'Close') : (isKu ? '+ لۆکەیشنی نوێ' : '+ New Location')}
+                      <Settings2 className="w-3 h-3" />
+                      <span>{isKu ? 'دەستکاری زۆنەکان' : 'Manage Zones'}</span>
                     </button>
                   </div>
-                  {showAddLocationInput ? (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={newLocationInput}
-                        onChange={(e) => setNewLocationInput(e.target.value)}
-                        placeholder={isKu ? 'وەک: حەوشە، سەربان، دەروازە' : 'e.g. Garden, Terrace, Roof'}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const val = newLocationInput.trim().toLowerCase().replace(/\s+/g, '_');
-                          if (val) {
-                            if (!customLocations.includes(val)) {
-                              setCustomLocations([...customLocations, val]);
-                            }
-                            setDeviceForm({ ...deviceForm, placement_zone: val });
-                            setNewLocationInput('');
-                            setShowAddLocationInput(false);
-                          }
-                        }}
-                        className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0"
-                      >
-                        {isKu ? 'زیادکە' : 'Add'}
-                      </button>
-                    </div>
-                  ) : (
-                    <select
-                      value={deviceForm.placement_zone}
-                      onChange={(e) => {
-                        if (e.target.value === '__add_new__') {
-                          setShowAddLocationInput(true);
-                        } else {
-                          setDeviceForm({ ...deviceForm, placement_zone: e.target.value });
-                        }
-                      }}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
-                    >
-                      {customLocations.map((loc) => (
-                        <option key={loc} value={loc}>
-                          {loc === 'indoor'
-                            ? t.zoneIndoor
-                            : loc === 'outdoor'
-                            ? t.zoneOutdoor
-                            : loc === 'rack'
-                            ? t.zoneRack
-                            : loc === 'safe_room'
-                            ? t.zoneSafeRoom
-                            : loc}
-                        </option>
-                      ))}
-                      <option value="__add_new__" className="text-blue-400 font-semibold">
-                        {isKu ? '+ زیادکردنی شوێنی نوێ...' : '+ Add Custom Location...'}
+                  <select
+                    value={deviceForm.placement_zone || ''}
+                    onChange={(e) => {
+                      if (e.target.value === '__manage__') {
+                        setIsZoneModalOpen(true);
+                      } else {
+                        setDeviceForm({ ...deviceForm, placement_zone: e.target.value });
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">{isKu ? '— بێ دیاریکردنی شوێن (دڵخوازانە) —' : '— None / Unassigned (Optional) —'}</option>
+                    {zones.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}
                       </option>
-                    </select>
-                  )}
+                    ))}
+                    <option value="__manage__" className="text-blue-400 font-semibold">
+                      {isKu ? '+ زیادکردن یان دەستکاری زۆنەکان...' : '+ Add / Manage Zones...'}
+                    </option>
+                  </select>
                 </div>
 
                 <div>
@@ -741,6 +714,13 @@ export default function DeviceProvisioning({
             setCategoryFilter(newCat.id);
           }
         }}
+        lang={lang}
+      />
+
+      {/* Dynamic Zone Types Manager Modal */}
+      <ZoneEditorModal
+        isOpen={isZoneModalOpen}
+        onClose={() => setIsZoneModalOpen(false)}
         lang={lang}
       />
     </div>

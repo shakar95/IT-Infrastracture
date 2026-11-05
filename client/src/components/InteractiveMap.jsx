@@ -27,11 +27,14 @@ import {
   Sparkles,
   FileText,
   Check,
+  Settings2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
+import ZoneEditorModal from './ZoneEditorModal';
 import { api } from '../services/api';
 import { getIctDeviceIcon } from '../utils/ictIcons';
+import { useZones } from '../utils/zoneManager';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -50,6 +53,8 @@ export default function InteractiveMap({
 }) {
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
+  const { zones, formatZone } = useZones();
+  const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
 
   // 1. All State Hooks
   const [selectedPlanId, setSelectedPlanId] = useState(initialSelectedPlanId || floorPlans[0]?.id || '');
@@ -65,7 +70,7 @@ export default function InteractiveMap({
   const [deviceNotes, setDeviceNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesSavedSuccess, setNotesSavedSuccess] = useState(false);
-  const [deviceZone, setDeviceZone] = useState('indoor');
+  const [deviceZone, setDeviceZone] = useState('');
   const [isSavingZone, setIsSavingZone] = useState(false);
 
   // Dynamic Blueprint Aspect Ratio State
@@ -222,7 +227,7 @@ export default function InteractiveMap({
   useEffect(() => {
     if (selectedDevice) {
       setDeviceNotes(selectedDevice.notes || '');
-      setDeviceZone(selectedDevice.placement_zone || 'indoor');
+      setDeviceZone(selectedDevice.placement_zone || '');
       setNotesSavedSuccess(false);
     }
   }, [selectedDevice?.id, selectedDevice?.notes, selectedDevice?.placement_zone]);
@@ -235,17 +240,17 @@ export default function InteractiveMap({
       setDeviceZone(newZone);
       const updatedPayload = {
         ...selectedDevice,
-        placement_zone: newZone,
+        placement_zone: newZone || null,
       };
       if (onUpdateDevice) {
         await onUpdateDevice(selectedDevice.id, updatedPayload);
       } else {
         await api.updateDevice(selectedDevice.id, updatedPayload);
       }
-      setSelectedDevice((prev) => (prev ? { ...prev, placement_zone: newZone } : prev));
+      setSelectedDevice((prev) => (prev ? { ...prev, placement_zone: newZone || null } : prev));
     } catch (err) {
       alert(err.message || 'Failed to update location zone');
-      setDeviceZone(selectedDevice.placement_zone || 'indoor');
+      setDeviceZone(selectedDevice.placement_zone || '');
     } finally {
       setIsSavingZone(false);
     }
@@ -625,9 +630,11 @@ export default function InteractiveMap({
                       </div>
 
                       {/* Zone Type Badge */}
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider shrink-0 ${zoneBadgeClass}`}>
-                        {fp.zone_type || 'indoor'}
-                      </span>
+                      {fp.zone_type ? (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider shrink-0 ${zoneBadgeClass}`}>
+                          {formatZone(fp.zone_type, lang)}
+                        </span>
+                      ) : null}
                     </div>
 
                     {/* Metadata Footer: Pin count + Edit / Delete Action Buttons */}
@@ -1187,61 +1194,87 @@ export default function InteractiveMap({
                 </span>
               </div>
 
-              {/* Location Zone Selector (Indoor / Outdoor / Server Rack) */}
+              {/* Location Zone Selector (Dynamic Custom Zones) */}
               <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{isKu ? 'دیاری کردنی شوێن' : 'Location Zone'}</span>
+                    <span>{isKu ? 'شوێنی دیڤایس (Location Zone)' : 'Location Zone'}</span>
                   </span>
-                  {isSavingZone && (
-                    <span className="text-[10px] text-blue-400 animate-pulse font-mono">
-                      {isKu ? 'تۆمارکردن...' : 'Saving...'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isSavingZone && (
+                      <span className="text-[10px] text-blue-400 animate-pulse font-mono">
+                        {isKu ? 'تۆمارکردن...' : 'Saving...'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsZoneModalOpen(true)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-medium inline-flex items-center gap-1 transition"
+                    >
+                      <Settings2 className="w-3 h-3" />
+                      <span>{isKu ? 'دەستکاری زۆنەکان' : 'Manage Zones'}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {/* None / Unassigned option */}
                   <button
                     type="button"
-                    onClick={() => handleUpdateZone('indoor')}
+                    onClick={() => handleUpdateZone('')}
                     disabled={isSavingZone}
-                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
-                      deviceZone === 'indoor'
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition active:scale-95 ${
+                      !deviceZone
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
                         : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
                     }`}
                   >
-                    <span>🏠</span>
-                    <span>{isKu ? 'ئیندۆر' : 'Indoor'}</span>
+                    <span>—</span>
+                    <span>{isKu ? 'بێ دیاریکردن' : 'None / Unset'}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateZone('outdoor')}
-                    disabled={isSavingZone}
-                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
-                      deviceZone === 'outdoor'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-                    }`}
-                  >
-                    <span>🌳</span>
-                    <span>{isKu ? 'ئاوتدۆر' : 'Outdoor'}</span>
-                  </button>
+                  {/* All available custom & system zones */}
+                  {zones.map((z) => {
+                    const isSelected = deviceZone === z.id;
+                    const iconEmoji =
+                      z.id === 'indoor'
+                        ? '🏠'
+                        : z.id === 'outdoor'
+                        ? '🌳'
+                        : z.id === 'rack'
+                        ? '🗄️'
+                        : z.id === 'safe_room'
+                        ? '🛡️'
+                        : '📍';
 
+                    return (
+                      <button
+                        key={z.id}
+                        type="button"
+                        onClick={() => handleUpdateZone(z.id)}
+                        disabled={isSavingZone}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition active:scale-95 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
+                            : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                        }`}
+                      >
+                        <span>{iconEmoji}</span>
+                        <span>{isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}</span>
+                      </button>
+                    );
+                  })}
+
+                  {/* Quick Add Custom Zone Button */}
                   <button
                     type="button"
-                    onClick={() => handleUpdateZone('rack')}
-                    disabled={isSavingZone}
-                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
-                      deviceZone === 'rack'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
-                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-                    }`}
+                    onClick={() => setIsZoneModalOpen(true)}
+                    className="px-2 py-1.5 rounded-lg text-xs text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600/30 border border-blue-500/30 flex items-center gap-1 transition"
+                    title={isKu ? 'زیادکردنی زۆنی نوێ' : 'Add new zone'}
                   >
-                    <span>🗄️</span>
-                    <span>{isKu ? 'ڕاک' : 'Rack'}</span>
+                    <Plus className="w-3 h-3" />
+                    <span>{isKu ? 'نوێ' : 'New'}</span>
                   </button>
                 </div>
               </div>
@@ -1456,6 +1489,13 @@ export default function InteractiveMap({
             }
           }
         }}
+        lang={lang}
+      />
+
+      {/* Dynamic Zone Types Manager Modal */}
+      <ZoneEditorModal
+        isOpen={isZoneModalOpen}
+        onClose={() => setIsZoneModalOpen(false)}
         lang={lang}
       />
     </div>

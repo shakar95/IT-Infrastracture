@@ -284,3 +284,4 @@ export function getIctDeviceIcon(dev = {}, boqModel = null, category = null) {
   // Fallback icon for generic infrastructure item
   return Layers;
 }
+

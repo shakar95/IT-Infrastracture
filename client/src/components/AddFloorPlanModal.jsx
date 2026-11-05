@@ -14,8 +14,11 @@ import {
   Info,
   Pencil,
   Trash2,
+  Settings2,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useZones } from '../utils/zoneManager';
+import ZoneEditorModal from './ZoneEditorModal';
 
 // Helper to ensure PDF.js is loaded
 const ensurePdfJs = async () => {
@@ -86,11 +89,13 @@ export default function AddFloorPlanModal({
   lang = 'en',
 }) {
   const isKu = lang === 'ku';
+  const { zones } = useZones();
+  const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [nameKu, setNameKu] = useState('');
-  const [zoneType, setZoneType] = useState('indoor');
-  const [floorLevel, setFloorLevel] = useState(0);
+  const [zoneType, setZoneType] = useState('');
+  const [floorLevel, setFloorLevel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [imagePreview, setImagePreview] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -107,8 +112,12 @@ export default function AddFloorPlanModal({
     if (planToEdit) {
       setName(planToEdit.name || '');
       setNameKu(planToEdit.name_ku || planToEdit.name || '');
-      setZoneType(planToEdit.zone_type || 'indoor');
-      setFloorLevel(planToEdit.floor_level ?? 0);
+      setZoneType(planToEdit.zone_type || '');
+      setFloorLevel(
+        planToEdit.floor_level !== undefined && planToEdit.floor_level !== null
+          ? planToEdit.floor_level
+          : ''
+      );
       setImageUrl(planToEdit.image_url || '');
       setImagePreview(planToEdit.image_url || '');
       setLoadedPdfDoc(null);
@@ -119,8 +128,8 @@ export default function AddFloorPlanModal({
     } else {
       setName('');
       setNameKu('');
-      setZoneType('indoor');
-      setFloorLevel(0);
+      setZoneType('');
+      setFloorLevel('');
       setImageUrl('');
       setImagePreview('');
       setLoadedPdfDoc(null);
@@ -281,8 +290,11 @@ export default function AddFloorPlanModal({
       const planPayload = {
         name: name.trim(),
         name_ku: nameKu.trim() || name.trim(),
-        zone_type: zoneType,
-        floor_level: Number(floorLevel) || 0,
+        zone_type: zoneType || null,
+        floor_level:
+          floorLevel !== '' && floorLevel !== null && floorLevel !== undefined
+            ? Number(floorLevel)
+            : null,
         image_url: imageUrl || imagePreview,
         scale_meters_per_pixel: 0.05,
       };
@@ -510,37 +522,67 @@ export default function AddFloorPlanModal({
             </div>
           </div>
 
-          {/* Zone Type & Floor Level */}
+          {/* Zone Type & Floor Level (Both Optional & Customizable) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                {isKu ? 'جۆری ناوچەکە (Zone Type)' : 'Zone Type'}
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-300">
+                  {isKu ? 'جۆری شوێن (Zone Type)' : 'Zone Type'}
+                  <span className="text-[10px] text-slate-400 font-normal ml-1 mr-1">
+                    ({isKu ? 'دڵخوازانە' : 'Optional'})
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsZoneModalOpen(true)}
+                  className="text-[11px] text-blue-400 hover:text-blue-300 font-medium inline-flex items-center gap-1 transition"
+                >
+                  <Settings2 className="w-3 h-3" />
+                  <span>{isKu ? 'دەستکاری زۆنەکان' : 'Manage Zones'}</span>
+                </button>
+              </div>
               <select
                 value={zoneType}
-                onChange={(e) => setZoneType(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === '__manage__') {
+                    setIsZoneModalOpen(true);
+                  } else {
+                    setZoneType(e.target.value);
+                  }
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
               >
-                <option value="indoor">{isKu ? 'ناو ڤێلا (Indoor)' : 'Indoor (Villa Interior)'}</option>
-                <option value="outdoor">{isKu ? 'دەرەوە و باخچە (Outdoor / Site)' : 'Outdoor (Site & Landscape)'}</option>
-                <option value="rack">{isKu ? 'ژووری سێرڤەر و ڕاکەکان (Server Rack)' : 'Server Rack Room'}</option>
-                <option value="safe_room">{isKu ? 'ژووری پارێزراو (Safe Room)' : 'Safe Room / Security'}</option>
+                <option value="">{isKu ? '— بێ دیاریکردنی زۆن (دڵخوازانە) —' : '— None / Not Specified (Optional) —'}</option>
+                {zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}
+                  </option>
+                ))}
+                <option value="__manage__" className="text-blue-400 font-semibold">
+                  {isKu ? '+ زیادکردن یان دەستکاری زۆنەکان...' : '+ Add / Manage Zones...'}
+                </option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 {isKu ? 'قات / پلەی شوێن (Floor Level)' : 'Floor Level'}
+                <span className="text-[10px] text-slate-400 font-normal ml-1 mr-1">
+                  ({isKu ? 'دڵخوازانە' : 'Optional'})
+                </span>
               </label>
               <select
                 value={floorLevel}
-                onChange={(e) => setFloorLevel(Number(e.target.value))}
+                onChange={(e) => setFloorLevel(e.target.value === '' ? '' : Number(e.target.value))}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
               >
-                <option value={-1}>Basement / ژێرزەمین (-1)</option>
-                <option value={0}>Ground Floor / قاتی زەمینی (0)</option>
-                <option value={1}>First Floor / قاتی یەکەم (1)</option>
-                <option value={2}>Second Floor / قاتی دووەم (2)</option>
-                <option value={3}>Roof Top / سەربان (3)</option>
+                <option value="">{isKu ? '— بێ دیاریکردنی قات (دڵخوازانە) —' : '— None / Not Specified (Optional) —'}</option>
+                <option value={-2}>{isKu ? 'ژێرزەمینی دووەم (-2)' : 'Basement 2 (-2)'}</option>
+                <option value={-1}>{isKu ? 'ژێرزەمین (-1)' : 'Basement (-1)'}</option>
+                <option value={0}>{isKu ? 'قاتی زەمینی (0)' : 'Ground Floor (0)'}</option>
+                <option value={1}>{isKu ? 'قاتی یەکەم (1)' : 'First Floor (1)'}</option>
+                <option value={2}>{isKu ? 'قاتی دووەم (2)' : 'Second Floor (2)'}</option>
+                <option value={3}>{isKu ? 'قاتی سێیەم (3)' : 'Third Floor (3)'}</option>
+                <option value={4}>{isKu ? 'سەربان (4)' : 'Roof Top (4)'}</option>
               </select>
             </div>
           </div>
@@ -591,6 +633,13 @@ export default function AddFloorPlanModal({
             </div>
           </div>
         </form>
+
+        {/* Custom Zones Management Modal */}
+        <ZoneEditorModal
+          isOpen={isZoneModalOpen}
+          onClose={() => setIsZoneModalOpen(false)}
+          lang={lang}
+        />
       </div>
     </div>
   );

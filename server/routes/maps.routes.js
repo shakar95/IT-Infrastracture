@@ -149,7 +149,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 // POST add new floor plan
 router.post('/', async (req, res) => {
   try {
-    const { name, name_ku, zone_type = 'indoor', floor_level = 0, image_url, scale_meters_per_pixel = 0.05 } = req.body;
+    const { name, name_ku, zone_type, floor_level, image_url, scale_meters_per_pixel = 0.05 } = req.body;
 
     if (!name || !image_url) {
       return res.status(400).json({ error: 'Floor plan name and image URL are required.' });
@@ -159,8 +159,11 @@ router.post('/', async (req, res) => {
       project_id: req.body.project_id || 'proj-sitak',
       name,
       name_ku: name_ku || name,
-      zone_type,
-      floor_level: Number(floor_level) || 0,
+      zone_type: zone_type || null,
+      floor_level:
+        floor_level !== undefined && floor_level !== null && floor_level !== ''
+          ? Number(floor_level)
+          : null,
       image_url,
       scale_meters_per_pixel: Number(scale_meters_per_pixel) || 0.05,
       is_active: true,
@@ -184,6 +187,29 @@ router.post('/', async (req, res) => {
           .single();
         data = retryResult.data;
         error = retryResult.error;
+      }
+
+      // Graceful fallback if database schema enforces NOT NULL or enum on zone_type or floor_level
+      if (
+        error &&
+        (error.message?.includes('zone_type') ||
+          error.message?.includes('floor_level') ||
+          error.message?.includes('enum') ||
+          error.code === '22P02')
+      ) {
+        console.warn('Supabase constraint on zone_type or floor_level, retrying with safe fallback defaults...');
+        const safePayload = {
+          ...planPayload,
+          zone_type: planPayload.zone_type || 'indoor',
+          floor_level: planPayload.floor_level ?? 0,
+        };
+        const retryFallback = await supabase
+          .from('floor_plans')
+          .insert([safePayload])
+          .select()
+          .single();
+        data = retryFallback.data;
+        error = retryFallback.error;
       }
 
       if (error) throw error;
@@ -213,18 +239,45 @@ router.put('/:id', async (req, res) => {
     const updatePayload = {};
     if (name !== undefined) updatePayload.name = name;
     if (name_ku !== undefined) updatePayload.name_ku = name_ku;
-    if (zone_type !== undefined) updatePayload.zone_type = zone_type;
-    if (floor_level !== undefined) updatePayload.floor_level = Number(floor_level) || 0;
+    if (zone_type !== undefined) updatePayload.zone_type = zone_type || null;
+    if (floor_level !== undefined) {
+      updatePayload.floor_level =
+        floor_level !== null && floor_level !== '' && floor_level !== undefined
+          ? Number(floor_level)
+          : null;
+    }
     if (image_url !== undefined) updatePayload.image_url = image_url;
     if (scale_meters_per_pixel !== undefined) updatePayload.scale_meters_per_pixel = Number(scale_meters_per_pixel);
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('floor_plans')
         .update(updatePayload)
         .eq('id', id)
         .select()
         .single();
+
+      // Graceful fallback if database schema enforces NOT NULL or enum on zone_type or floor_level
+      if (
+        error &&
+        (error.message?.includes('zone_type') ||
+          error.message?.includes('floor_level') ||
+          error.message?.includes('enum') ||
+          error.code === '22P02')
+      ) {
+        console.warn('Supabase constraint on zone_type or floor_level update, falling back to safe defaults...');
+        const safeUpdate = { ...updatePayload };
+        if (safeUpdate.zone_type === null) safeUpdate.zone_type = 'indoor';
+        if (safeUpdate.floor_level === null) safeUpdate.floor_level = 0;
+        const retryUpdate = await supabase
+          .from('floor_plans')
+          .update(safeUpdate)
+          .eq('id', id)
+          .select()
+          .single();
+        data = retryUpdate.data;
+        error = retryUpdate.error;
+      }
 
       if (error) throw error;
       return res.json(data);
