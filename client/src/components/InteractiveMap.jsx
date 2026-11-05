@@ -227,6 +227,11 @@ export default function InteractiveMap({
     }
   };
 
+  // Reset zoom & pan to fit entire blueprint cleanly
+  const handleResetView = () => {
+    autoFitBlueprint();
+  };
+
   // Zoom controls
   const handleZoomIn = () => {
     setZoom((z) => Math.min(6.0, Number((z + 0.20).toFixed(2))));
