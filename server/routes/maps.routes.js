@@ -149,7 +149,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 // POST add new floor plan
 router.post('/', async (req, res) => {
   try {
-    const { name, name_ku, zone_type, floor_level, image_url, scale_meters_per_pixel = 0.05 } = req.body;
+    const { name, name_ku, zone, zone_type, floor_level, image_url, scale_meters_per_pixel = 0.05 } = req.body;
 
     if (!name || !image_url) {
       return res.status(400).json({ error: 'Floor plan name and image URL are required.' });
@@ -159,6 +159,7 @@ router.post('/', async (req, res) => {
       project_id: req.body.project_id || 'proj-sitak',
       name,
       name_ku: name_ku || name,
+      zone: zone || null,
       zone_type: zone_type || null,
       floor_level:
         floor_level !== undefined && floor_level !== null && floor_level !== ''
@@ -176,13 +177,13 @@ router.post('/', async (req, res) => {
         .select()
         .single();
 
-      // Graceful fallback if floor_plans table does not yet have 'project_id' column in Supabase schema cache
-      if (error && (error.message?.includes('project_id') || error.code === 'PGRST204')) {
-        console.warn('Supabase floor_plans table missing project_id column, retrying insert without project_id...');
-        const { project_id, ...payloadWithoutProject } = planPayload;
+      // Graceful fallback if floor_plans table does not yet have 'zone' or 'project_id' column in Supabase schema cache
+      if (error && (error.message?.includes('zone') || error.message?.includes('project_id') || error.code === 'PGRST204')) {
+        console.warn('Supabase floor_plans missing column, retrying insert with standard columns...');
+        const { zone: _z, project_id: _p, ...cleanPayload } = planPayload;
         const retryResult = await supabase
           .from('floor_plans')
-          .insert([payloadWithoutProject])
+          .insert([cleanPayload])
           .select()
           .single();
         data = retryResult.data;
@@ -234,11 +235,12 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, name_ku, zone_type, floor_level, image_url, scale_meters_per_pixel } = req.body;
+    const { name, name_ku, zone, zone_type, floor_level, image_url, scale_meters_per_pixel } = req.body;
 
     const updatePayload = {};
     if (name !== undefined) updatePayload.name = name;
     if (name_ku !== undefined) updatePayload.name_ku = name_ku;
+    if (zone !== undefined) updatePayload.zone = zone || null;
     if (zone_type !== undefined) updatePayload.zone_type = zone_type || null;
     if (floor_level !== undefined) {
       updatePayload.floor_level =

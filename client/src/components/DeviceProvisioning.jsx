@@ -19,13 +19,16 @@ import {
   Eye,
   Info,
   Settings2,
+  Building2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
 import ZoneEditorModal from './ZoneEditorModal';
+import EstateZoneEditorModal from './EstateZoneEditorModal';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
+import { useEstateZones } from '../utils/estateZoneManager';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -44,10 +47,12 @@ export default function DeviceProvisioning({
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
+  const { estateZones, formatEstateZone } = useEstateZones();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [zoneFilter, setZoneFilter] = useState('all');
+  const [estateZoneFilter, setEstateZoneFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,6 +60,7 @@ export default function DeviceProvisioning({
   const [inspectingDevice, setInspectingDevice] = useState(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
+  const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
 
   // Form State (All fields start empty, placeholders will show guidance)
   const [deviceForm, setDeviceForm] = useState({
@@ -70,6 +76,7 @@ export default function DeviceProvisioning({
     switch_port: '',
     rack_name: '',
     rack_unit: '',
+    zone: '',
     placement_zone: 'indoor',
     floor_plan_id: floorPlans[0]?.id || '',
     installation_status: 'Pending',
@@ -82,6 +89,7 @@ export default function DeviceProvisioning({
     const model = boqModels.find((m) => m.id === d.boq_model_id);
     const matchesStatus = statusFilter === 'all' || d.installation_status === statusFilter;
     const matchesZone = zoneFilter === 'all' || d.placement_zone === zoneFilter;
+    const matchesEstateZone = estateZoneFilter === 'all' || d.zone === estateZoneFilter;
     const matchesCategory = categoryFilter === 'all' || (model && model.category_id === categoryFilter);
 
     const s = search.toLowerCase();
@@ -93,7 +101,7 @@ export default function DeviceProvisioning({
       (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
       (model && (model.brand + ' ' + model.model).toLowerCase().includes(s));
 
-    return matchesStatus && matchesZone && matchesCategory && matchesSearch;
+    return matchesStatus && matchesZone && matchesEstateZone && matchesCategory && matchesSearch;
   });
 
   const handleOpenNew = () => {
@@ -111,6 +119,7 @@ export default function DeviceProvisioning({
       switch_port: '',
       rack_name: '',
       rack_unit: '',
+      zone: '',
       placement_zone: firstModel?.is_rack_mounted ? 'rack' : firstModel?.allowed_zones?.[0] || 'indoor',
       floor_plan_id: floorPlans[0]?.id || '',
       installation_status: 'Pending',
@@ -135,6 +144,7 @@ export default function DeviceProvisioning({
       switch_port: dev.switch_port || '',
       rack_name: dev.rack_name || '',
       rack_unit: dev.rack_unit || '',
+      zone: dev.zone || '',
       placement_zone: dev.placement_zone || 'indoor',
       floor_plan_id: dev.floor_plan_id || '',
       installation_status: dev.installation_status || 'Pending',
@@ -237,10 +247,23 @@ export default function DeviceProvisioning({
           onChange={(e) => setZoneFilter(e.target.value)}
           className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500"
         >
-          <option value="all">{t.allZones}</option>
+          <option value="all">{isKu ? 'گشت جۆرەکانی شوێن (Zone Type)' : 'All Zone Types'}</option>
           {zones.map((z) => (
             <option key={z.id} value={z.id}>
               {isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={estateZoneFilter}
+          onChange={(e) => setEstateZoneFilter(e.target.value)}
+          className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+        >
+          <option value="all">{isKu ? 'گشت زۆنەکان (All Zones)' : 'All Zones'}</option>
+          {estateZones.map((ez) => (
+            <option key={ez.id} value={ez.id}>
+              {isKu ? (ez.labelKu || ez.label) : (ez.label || ez.labelKu)}
             </option>
           ))}
         </select>
@@ -565,23 +588,66 @@ export default function DeviceProvisioning({
                 </div>
               </div>
 
-              {/* Site Plan / Floor Plan & Placement Zone */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Site Plan / Floor Plan & Placement Zone & Estate Zone */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Estate Zone (Main Villa / Guest House / Service Area) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                      <Building2 className="w-3 h-3 text-blue-400" />
+                      <span>{isKu ? 'زۆن (Zone)' : 'Zone'}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        ({isKu ? 'دڵخوازانە' : 'Optional'})
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsEstateZoneModalOpen(true)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition"
+                    >
+                      <Settings2 className="w-2.5 h-2.5" />
+                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                    </button>
+                  </div>
+                  <select
+                    value={deviceForm.zone || ''}
+                    onChange={(e) => {
+                      if (e.target.value === '__manage__') {
+                        setIsEstateZoneModalOpen(true);
+                      } else {
+                        setDeviceForm({ ...deviceForm, zone: e.target.value });
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">{isKu ? '— بێ دیاریکردنی زۆن —' : '— None / Unspecified —'}</option>
+                    {estateZones.map((ez) => (
+                      <option key={ez.id} value={ez.id}>
+                        {isKu ? (ez.labelKu || ez.label) : (ez.label || ez.labelKu)}
+                      </option>
+                    ))}
+                    <option value="__manage__" className="text-blue-400 font-semibold">
+                      {isKu ? '+ زیادکردن یان دەستکاری...' : '+ Add / Manage Zones...'}
+                    </option>
+                  </select>
+                </div>
+
+                {/* 2. Zone Type (Indoor / Outdoor / Rack / etc.) */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-slate-300">
                       {t.placementZoneLabel}
-                      <span className="text-[10px] text-slate-400 font-normal ml-1 mr-1">
+                      <span className="text-[10px] text-slate-400 font-normal">
                         ({isKu ? 'دڵخوازانە' : 'Optional'})
                       </span>
                     </label>
                     <button
                       type="button"
                       onClick={() => setIsZoneModalOpen(true)}
-                      className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-1 transition"
+                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition"
                     >
-                      <Settings2 className="w-3 h-3" />
-                      <span>{isKu ? 'دەستکاری زۆنەکان' : 'Manage Zones'}</span>
+                      <Settings2 className="w-2.5 h-2.5" />
+                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
                     </button>
                   </div>
                   <select
@@ -593,33 +659,43 @@ export default function DeviceProvisioning({
                         setDeviceForm({ ...deviceForm, placement_zone: e.target.value });
                       }
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   >
-                    <option value="">{isKu ? '— بێ دیاریکردنی شوێن (دڵخوازانە) —' : '— None / Unassigned (Optional) —'}</option>
+                    <option value="">{isKu ? '— بێ دیاریکردنی شوێن —' : '— None / Optional —'}</option>
                     {zones.map((z) => (
                       <option key={z.id} value={z.id}>
                         {isKu ? (z.labelKu || z.label) : (z.label || z.labelKu)}
                       </option>
                     ))}
                     <option value="__manage__" className="text-blue-400 font-semibold">
-                      {isKu ? '+ زیادکردن یان دەستکاری زۆنەکان...' : '+ Add / Manage Zones...'}
+                      {isKu ? '+ زیادکردنی جۆر...' : '+ Add Zone Type...'}
                     </option>
                   </select>
                 </div>
 
+                {/* 3. Site Plan / Blueprint */}
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     {isKu ? 'سایت پلان / نەخشەی شوێن' : 'Site Plan / Blueprint'}
                   </label>
                   <select
                     value={deviceForm.floor_plan_id || ''}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, floor_plan_id: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
+                    onChange={(e) => {
+                      const selFpId = e.target.value;
+                      const selFp = floorPlans.find((fp) => fp.id === selFpId);
+                      setDeviceForm({
+                        ...deviceForm,
+                        floor_plan_id: selFpId,
+                        zone: deviceForm.zone || selFp?.zone || '',
+                        placement_zone: deviceForm.placement_zone || selFp?.zone_type || 'indoor',
+                      });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   >
                     <option value="">{isKu ? 'دیاری نەکراوە (دانانی لە دوایدا)' : 'None (Unassigned)'}</option>
                     {floorPlans.map((fp) => (
                       <option key={fp.id} value={fp.id}>
-                        {isKu ? fp.name_ku : fp.name} ({fp.zone_type})
+                        {isKu ? fp.name_ku : fp.name} {fp.zone ? `[${formatEstateZone(fp.zone, lang)}]` : ''}
                       </option>
                     ))}
                   </select>
@@ -721,6 +797,13 @@ export default function DeviceProvisioning({
       <ZoneEditorModal
         isOpen={isZoneModalOpen}
         onClose={() => setIsZoneModalOpen(false)}
+        lang={lang}
+      />
+
+      {/* Dynamic Estate Zones Manager Modal (Main Villa, Guest House, Service Area) */}
+      <EstateZoneEditorModal
+        isOpen={isEstateZoneModalOpen}
+        onClose={() => setIsEstateZoneModalOpen(false)}
         lang={lang}
       />
     </div>

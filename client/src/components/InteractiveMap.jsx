@@ -28,13 +28,16 @@ import {
   FileText,
   Check,
   Settings2,
+  Building2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
 import ZoneEditorModal from './ZoneEditorModal';
+import EstateZoneEditorModal from './EstateZoneEditorModal';
 import { api } from '../services/api';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
+import { useEstateZones } from '../utils/estateZoneManager';
 
 export default function InteractiveMap({
   floorPlans = [],
@@ -54,7 +57,10 @@ export default function InteractiveMap({
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
+  const { estateZones, formatEstateZone } = useEstateZones();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
+  const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState('all');
 
   // 1. All State Hooks
   const [selectedPlanId, setSelectedPlanId] = useState(initialSelectedPlanId || floorPlans[0]?.id || '');
@@ -72,6 +78,8 @@ export default function InteractiveMap({
   const [notesSavedSuccess, setNotesSavedSuccess] = useState(false);
   const [deviceZone, setDeviceZone] = useState('');
   const [isSavingZone, setIsSavingZone] = useState(false);
+  const [deviceEstateZone, setDeviceEstateZone] = useState('');
+  const [isSavingEstateZone, setIsSavingEstateZone] = useState(false);
 
   // Dynamic Blueprint Aspect Ratio State
   const [planDimensions, setPlanDimensions] = useState({ width: 1200, height: 800 });
@@ -228,9 +236,10 @@ export default function InteractiveMap({
     if (selectedDevice) {
       setDeviceNotes(selectedDevice.notes || '');
       setDeviceZone(selectedDevice.placement_zone || '');
+      setDeviceEstateZone(selectedDevice.zone || '');
       setNotesSavedSuccess(false);
     }
-  }, [selectedDevice?.id, selectedDevice?.notes, selectedDevice?.placement_zone]);
+  }, [selectedDevice?.id, selectedDevice?.notes, selectedDevice?.placement_zone, selectedDevice?.zone]);
 
   // Handlers for Zone & Notes
   const handleUpdateZone = async (newZone) => {
@@ -253,6 +262,29 @@ export default function InteractiveMap({
       setDeviceZone(selectedDevice.placement_zone || '');
     } finally {
       setIsSavingZone(false);
+    }
+  };
+
+  const handleUpdateEstateZone = async (newEstateZone) => {
+    if (!selectedDevice || newEstateZone === deviceEstateZone || isSavingEstateZone) return;
+    try {
+      setIsSavingEstateZone(true);
+      setDeviceEstateZone(newEstateZone);
+      const updatedPayload = {
+        ...selectedDevice,
+        zone: newEstateZone || null,
+      };
+      if (onUpdateDevice) {
+        await onUpdateDevice(selectedDevice.id, updatedPayload);
+      } else {
+        await api.updateDevice(selectedDevice.id, updatedPayload);
+      }
+      setSelectedDevice((prev) => (prev ? { ...prev, zone: newEstateZone || null } : prev));
+    } catch (err) {
+      alert(err.message || 'Failed to update estate zone');
+      setDeviceEstateZone(selectedDevice.zone || '');
+    } finally {
+      setIsSavingEstateZone(false);
     }
   };
 
@@ -578,16 +610,47 @@ export default function InteractiveMap({
               <Plus className="w-4 h-4" />
               <span>{isKu ? '+ نەخشەی نوێ (PDF / وێنە)' : '+ Add Blueprint (PDF / Img)'}</span>
             </button>
+
+            {/* Quick Estate Zone Filter: All, Main Villa, Guest House, Service Area */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setSelectedZoneFilter('all')}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap transition ${
+                  selectedZoneFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                {isKu ? 'گشت' : 'All'}
+              </button>
+              {estateZones.map((ez) => (
+                <button
+                  key={ez.id}
+                  type="button"
+                  onClick={() => setSelectedZoneFilter(ez.id)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap transition ${
+                    selectedZoneFilter === ez.id
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {isKu ? (ez.labelKu || ez.label) : (ez.label || ez.labelKu)}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Scrollable Floor Plans List inside Fixed Window */}
           <div className="flex-1 overflow-y-auto space-y-2 pt-3 pr-1 custom-scrollbar">
-            {floorPlans.length === 0 ? (
+            {floorPlans.filter((fp) => selectedZoneFilter === 'all' || fp.zone === selectedZoneFilter).length === 0 ? (
               <div className="py-12 text-center text-xs text-slate-500 italic">
                 {isKu ? 'هیچ نەخشەیەک بەردەست نییە' : 'No floor plans available'}
               </div>
             ) : (
-              floorPlans.map((fp) => {
+              floorPlans
+                .filter((fp) => selectedZoneFilter === 'all' || fp.zone === selectedZoneFilter)
+                .map((fp) => {
                 const isActive = fp.id === activePlan?.id;
                 const planDeviceCount = devices.filter((d) => d.floor_plan_id === fp.id).length;
                 const zoneBadgeClass = isActive
@@ -622,11 +685,19 @@ export default function InteractiveMap({
                         <p className="text-xs font-bold truncate leading-tight">
                           {isKu ? (fp.name_ku || fp.name) : fp.name}
                         </p>
-                        {fp.floor_level !== undefined && fp.floor_level !== null && (
-                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                            Level: {fp.floor_level}
-                          </p>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          {fp.zone && (
+                            <span className="text-[10px] text-blue-400 font-medium inline-flex items-center gap-0.5">
+                              <Building2 className="w-2.5 h-2.5" />
+                              <span>{formatEstateZone(fp.zone, lang)}</span>
+                            </span>
+                          )}
+                          {fp.floor_level !== undefined && fp.floor_level !== null && (
+                            <span className="text-[10px] text-slate-400 truncate">
+                              Level: {fp.floor_level}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Zone Type Badge */}
@@ -1194,6 +1265,77 @@ export default function InteractiveMap({
                 </span>
               </div>
 
+              {/* 1. Estate Zone Selector (Main Villa / Guest House / Service Area) */}
+              <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{isKu ? 'زۆن (Zone)' : 'Zone (Building)'}</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {isSavingEstateZone && (
+                      <span className="text-[10px] text-blue-400 animate-pulse font-mono">
+                        {isKu ? 'تۆمارکردن...' : 'Saving...'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsEstateZoneModalOpen(true)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-medium inline-flex items-center gap-1 transition"
+                    >
+                      <Settings2 className="w-3 h-3" />
+                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateEstateZone('')}
+                    disabled={isSavingEstateZone}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition active:scale-95 ${
+                      !deviceEstateZone
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
+                        : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    <span>—</span>
+                    <span>{isKu ? 'بێ زۆن' : 'No Zone'}</span>
+                  </button>
+
+                  {estateZones.map((ez) => {
+                    const isSelected = deviceEstateZone === ez.id || deviceEstateZone === ez.label;
+                    return (
+                      <button
+                        key={ez.id}
+                        type="button"
+                        onClick={() => handleUpdateEstateZone(ez.id)}
+                        disabled={isSavingEstateZone}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold border border-blue-400'
+                            : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                        }`}
+                      >
+                        <Building2 className="w-3 h-3 opacity-70" />
+                        <span>{isKu ? (ez.labelKu || ez.label) : (ez.label || ez.labelKu)}</span>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsEstateZoneModalOpen(true)}
+                    className="px-2 py-1.5 rounded-lg text-xs text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-600/30 border border-blue-500/30 flex items-center gap-1 transition"
+                    title={isKu ? 'زیادکردنی زۆنی نوێ' : 'Add new zone'}
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>{isKu ? 'نوێ' : 'New'}</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Location Zone Selector (Dynamic Custom Zones) */}
               <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1496,6 +1638,13 @@ export default function InteractiveMap({
       <ZoneEditorModal
         isOpen={isZoneModalOpen}
         onClose={() => setIsZoneModalOpen(false)}
+        lang={lang}
+      />
+
+      {/* Dynamic Estate Zones Manager Modal (Main Villa, Guest House, Service Area) */}
+      <EstateZoneEditorModal
+        isOpen={isEstateZoneModalOpen}
+        onClose={() => setIsEstateZoneModalOpen(false)}
         lang={lang}
       />
     </div>

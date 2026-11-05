@@ -259,3 +259,4 @@ export default function ZoneEditorModal({ isOpen, onClose, lang = 'ku' }) {
     </div>
   );
 }
+

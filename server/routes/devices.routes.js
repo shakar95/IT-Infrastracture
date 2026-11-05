@@ -159,6 +159,7 @@ router.post('/', async (req, res) => {
       switch_port: deviceData.switch_port || null,
       rack_name: deviceData.rack_name || null,
       rack_unit: deviceData.rack_unit || null,
+      zone: deviceData.zone || null,
       placement_zone: deviceData.placement_zone || (model?.is_rack_mounted ? 'rack' : 'indoor'),
       floor_plan_id: deviceData.floor_plan_id || null,
       pos_x: deviceData.pos_x ?? null,
@@ -245,6 +246,7 @@ router.put('/:id', async (req, res) => {
           switch_port: updates.switch_port,
           rack_name: updates.rack_name,
           rack_unit: updates.rack_unit,
+          zone: updates.zone !== undefined ? (updates.zone || null) : undefined,
           placement_zone: updates.placement_zone,
           floor_plan_id: updates.floor_plan_id || null,
           pos_x: updates.pos_x ?? null,
@@ -332,7 +334,7 @@ router.patch('/:id/status', async (req, res) => {
 router.patch('/:id/position', async (req, res) => {
   try {
     const { id } = req.params;
-    const { floor_plan_id, pos_x, pos_y, placement_zone, notes } = req.body;
+    const { floor_plan_id, pos_x, pos_y, placement_zone, zone, notes } = req.body;
 
     let device, model, targetFloorPlan, allDevices;
 
@@ -376,6 +378,11 @@ router.patch('/:id/position', async (req, res) => {
       placement_zone: determinedZone,
       updated_at: new Date().toISOString(),
     };
+    if (zone !== undefined) {
+      updatePayload.zone = zone || null;
+    } else if (targetFloorPlan?.zone) {
+      updatePayload.zone = targetFloorPlan.zone;
+    }
     if (notes !== undefined) {
       updatePayload.notes = notes;
     }
