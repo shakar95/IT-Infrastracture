@@ -11,3 +11,4 @@ DROP FUNCTION IF EXISTS check_device_placement_guardrail();
 
 -- 3. Notify PostgREST schema cache to reload
 NOTIFY pgrst, 'reload schema';
+
