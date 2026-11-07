@@ -52,3 +52,4 @@ export function getEffectiveProductImage(imageUrl) {
   }
   return imageUrl;
 }
+

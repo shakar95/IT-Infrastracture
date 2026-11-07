@@ -121,47 +121,80 @@ router.post('/batch', async (req, res) => {
 
     const defaultImg = '/default-ict-device.svg';
 
-    // Current models belonging to this project from Supabase or memory
-    let currentProjectModels = [];
+    // 1. Fetch all categories to guarantee every item has a valid Category UUID in Supabase
+    let dbCategories = [];
     if (isSupabaseConfigured) {
       try {
-        const { data: dbData, error: dbErr } = await supabase.from('boq_models').select('*, categories(*)');
-        if (!dbErr && dbData) {
-          currentProjectModels = dbData.filter((m) => (m.project_id || 'proj-sitak') === project_id);
-        }
+        const { data: catData } = await supabase.from('categories').select('id, name, name_ku');
+        if (catData && catData.length > 0) dbCategories = catData;
+      } catch (catErr) {
+        console.warn('Failed to load categories from Supabase:', catErr.message);
+      }
+    }
+    if (dbCategories.length === 0) {
+      dbCategories = mockCategories;
+    }
+    const defaultCategoryId = dbCategories[0]?.id || '10000000-0000-0000-0000-000000000001';
+
+    // 2. Fetch existing models from Supabase (or memory)
+    let currentDbModels = [];
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbData } = await supabase.from('boq_models').select('*');
+        if (dbData) currentDbModels = dbData;
       } catch (err) {
         console.warn('Failed to load Supabase models for batch import:', err.message);
       }
     }
-
-    if (currentProjectModels.length === 0) {
-      currentProjectModels = mockBoqModels.filter(
-        (m) => (m.project_id || 'proj-sitak') === project_id
-      );
+    if (currentDbModels.length === 0) {
+      currentDbModels = mockBoqModels;
     }
 
+    // 3. Process items and prepare batch upsert payload
     const added = [];
     const updated = [];
     const skipped = [];
     const changeDetails = [];
+    const upsertBatch = [];
+
+    // Deduplicate within the incoming batch itself (by brand + model lowercased)
+    const seenBrandModel = new Map();
 
     for (const rawItem of items) {
       const brand = (rawItem.brand || 'Generic').trim();
       const model = (rawItem.model || `MOD-${Math.floor(1000 + Math.random() * 9000)}`).trim();
-      const normModel = model.toLowerCase();
       const normBrand = brand.toLowerCase();
+      const normModel = model.toLowerCase();
+      const dedupeKey = `${normBrand}:::${normModel}`;
 
-      // Find existing model strictly in THIS project
-      const existing = currentProjectModels.find(
+      // If duplicate in incoming Excel, skip subsequent duplicates within the batch
+      if (seenBrandModel.has(dedupeKey)) continue;
+      seenBrandModel.set(dedupeKey, true);
+
+      // Match against existing database models
+      const existing = currentDbModels.find(
         (m) =>
-          (m.model && m.model.trim().toLowerCase() === normModel) ||
-          (m.brand && m.brand.trim().toLowerCase() === normBrand && m.model && m.model.trim().toLowerCase() === normModel)
+          (m.model && m.model.trim().toLowerCase() === normModel && m.brand && m.brand.trim().toLowerCase() === normBrand) ||
+          (m.model && m.model.trim().toLowerCase() === normModel)
       );
+
+      // Validate category ID
+      let categoryId = rawItem.category_id;
+      if (!categoryId || !dbCategories.some((c) => c.id === categoryId)) {
+        // Try match by name
+        const catStr = (rawItem.category_name || rawItem.category || '').toLowerCase();
+        const matched = dbCategories.find(
+          (c) =>
+            c.name.toLowerCase() === catStr ||
+            (c.name_ku && c.name_ku.toLowerCase() === catStr) ||
+            c.name.toLowerCase().includes(catStr)
+        );
+        categoryId = matched ? matched.id : defaultCategoryId;
+      }
 
       const targetQty = Math.max(1, Number(rawItem.total_qty) || 1);
       const targetUnitCost = Number(rawItem.unit_cost) || 0;
       const targetDesc = (rawItem.description || '').trim();
-      const targetCategory = rawItem.category_id || (existing ? existing.category_id : null);
       const targetZone = Array.isArray(rawItem.allowed_zones) && rawItem.allowed_zones.length > 0
         ? rawItem.allowed_zones
         : [rawItem.placement_zone || 'indoor'];
@@ -170,13 +203,12 @@ router.post('/batch', async (req, res) => {
       const targetImg = rawItem.product_image_url || defaultImg;
 
       if (!existing) {
-        // Case 1: Model does NOT exist in this site -> ADD / INSERT
-        const newModel = {
-          id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        // Prepare for insert - omit id so Postgres generates UUID automatically!
+        const itemRecord = {
           project_id,
           brand,
           model,
-          category_id: targetCategory,
+          category_id: categoryId,
           description: targetDesc,
           total_qty: targetQty,
           unit_cost: targetUnitCost,
@@ -186,40 +218,11 @@ router.post('/batch', async (req, res) => {
           is_rack_mounted: targetIsRack,
           rack_unit_size: targetRackSize,
           custom_specs: rawItem.custom_specs || {},
-          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
 
-        if (isSupabaseConfigured) {
-          try {
-            let { data: inserted, error: insertErr } = await supabase
-              .from('boq_models')
-              .insert([newModel])
-              .select('*, categories(*)')
-              .single();
-
-            if (insertErr && (insertErr.message?.includes('project_id') || insertErr.code === 'PGRST204')) {
-              const { project_id: _, ...payloadWithoutProj } = newModel;
-              const retry = await supabase
-                .from('boq_models')
-                .insert([payloadWithoutProj])
-                .select('*, categories(*)')
-                .single();
-              inserted = retry.data;
-            }
-
-            if (inserted) {
-              newModel.id = inserted.id;
-              newModel.categories = inserted.categories;
-            }
-          } catch (err) {
-            console.warn('Supabase batch insert error:', err.message);
-          }
-        }
-
-        mockBoqModels.push(newModel);
-        currentProjectModels.push(newModel);
-        added.push(newModel);
+        upsertBatch.push(itemRecord);
+        added.push(itemRecord);
         changeDetails.push({
           type: 'added',
           brand,
@@ -227,7 +230,7 @@ router.post('/batch', async (req, res) => {
           details: `Added new model (Qty: ${targetQty}, Cost: $${targetUnitCost})`,
         });
       } else {
-        // Case 2: Model already exists in this site -> Compare fields & UPDATE in place
+        // Compare diffs
         const diffs = [];
         if (Number(existing.total_qty) !== targetQty) {
           diffs.push({ field: 'total_qty', label: 'Qty', oldVal: existing.total_qty, newVal: targetQty });
@@ -238,8 +241,8 @@ router.post('/batch', async (req, res) => {
         if ((existing.description || '').trim() !== targetDesc && targetDesc) {
           diffs.push({ field: 'description', label: 'Description', oldVal: existing.description, newVal: targetDesc });
         }
-        if (targetCategory && existing.category_id !== targetCategory) {
-          diffs.push({ field: 'category_id', label: 'Category', oldVal: existing.category_id, newVal: targetCategory });
+        if (categoryId && existing.category_id !== categoryId) {
+          diffs.push({ field: 'category_id', label: 'Category', oldVal: existing.category_id, newVal: categoryId });
         }
         if (Boolean(existing.is_rack_mounted) !== targetIsRack) {
           diffs.push({ field: 'is_rack_mounted', label: 'Rack Mount', oldVal: existing.is_rack_mounted, newVal: targetIsRack });
@@ -249,46 +252,27 @@ router.post('/batch', async (req, res) => {
         }
 
         if (diffs.length > 0) {
-          // Fields differ -> UPDATE existing record
-          const updatePayload = {
+          const itemRecord = {
+            id: existing.id,
+            project_id: existing.project_id || project_id,
+            brand: existing.brand || brand,
+            model: existing.model || model,
+            category_id: categoryId,
             description: targetDesc || existing.description,
             total_qty: targetQty,
             unit_cost: targetUnitCost,
-            category_id: targetCategory || existing.category_id,
+            product_image_url: targetImg,
+            manual_pdf_url: rawItem.manual_pdf_url || existing.manual_pdf_url || null,
             allowed_zones: targetZone,
             is_rack_mounted: targetIsRack,
             rack_unit_size: targetRackSize,
-            product_image_url: rawItem.product_image_url || existing.product_image_url || defaultImg,
+            custom_specs: rawItem.custom_specs || existing.custom_specs || {},
             updated_at: new Date().toISOString(),
           };
 
-          if (isSupabaseConfigured && existing.id) {
-            try {
-              await supabase
-                .from('boq_models')
-                .update(updatePayload)
-                .eq('id', existing.id);
-            } catch (err) {
-              console.warn('Supabase batch update error:', err.message);
-            }
-          }
-
-          const idx = mockBoqModels.findIndex((m) => m.id === existing.id);
-          const updatedModel = {
-            ...existing,
-            ...updatePayload,
-          };
-
-          if (idx !== -1) {
-            mockBoqModels[idx] = updatedModel;
-          }
-          const currIdx = currentProjectModels.findIndex((m) => m.id === existing.id);
-          if (currIdx !== -1) {
-            currentProjectModels[currIdx] = updatedModel;
-          }
-
+          upsertBatch.push(itemRecord);
           updated.push({
-            ...updatedModel,
+            ...itemRecord,
             diffs,
           });
           changeDetails.push({
@@ -299,13 +283,50 @@ router.post('/batch', async (req, res) => {
             details: diffs.map((d) => `${d.label}: ${d.oldVal} ➔ ${d.newVal}`).join(', '),
           });
         } else {
-          // No changes -> SKIP (no duplicate created)
           skipped.push(existing);
         }
       }
     }
 
-    // Generate BOQ Version Snapshot if changes occurred
+    // 4. Execute Batch Upsert into Supabase in fast chunks
+    if (isSupabaseConfigured && upsertBatch.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < upsertBatch.length; i += CHUNK_SIZE) {
+        const chunk = upsertBatch.slice(i, i + CHUNK_SIZE);
+        try {
+          const { error: upsertErr } = await supabase
+            .from('boq_models')
+            .upsert(chunk, { onConflict: 'brand,model' });
+
+          if (upsertErr) {
+            console.error('Supabase batch upsert chunk error:', upsertErr);
+            // Fallback: try inserting without project_id if column missing in Supabase schema cache
+            if (upsertErr.message?.includes('project_id') || upsertErr.code === 'PGRST204') {
+              const cleanedChunk = chunk.map(({ project_id: _, ...rest }) => rest);
+              await supabase.from('boq_models').upsert(cleanedChunk, { onConflict: 'brand,model' });
+            }
+          }
+        } catch (chunkErr) {
+          console.error('Error executing chunk upsert:', chunkErr);
+        }
+      }
+    }
+
+    // Also update in-memory mockBoqModels for local sync
+    for (const item of upsertBatch) {
+      const idx = mockBoqModels.findIndex((m) => m.brand === item.brand && m.model === item.model);
+      if (idx !== -1) {
+        mockBoqModels[idx] = { ...mockBoqModels[idx], ...item };
+      } else {
+        mockBoqModels.push({
+          id: item.id || `boq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          created_at: new Date().toISOString(),
+          ...item,
+        });
+      }
+    }
+
+    // 5. Version snapshot
     let createdVersion = null;
     if (added.length > 0 || updated.length > 0) {
       const existingProjectVersions = mockBoqVersions.filter((v) => v.project_id === project_id);
@@ -336,6 +357,7 @@ router.post('/batch', async (req, res) => {
       mockBoqVersions.unshift(createdVersion);
     }
 
+    // 6. Fetch fresh, complete list of models to return to frontend
     let finalModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
     if (isSupabaseConfigured) {
       try {
@@ -357,6 +379,17 @@ router.post('/batch', async (req, res) => {
     return res.status(201).json({
       success: true,
       models: finalModels,
+      report: {
+        total_processed: items.length,
+        added_count: added.length,
+        updated_count: updated.length,
+        skipped_count: skipped.length,
+        added,
+        updated,
+        skipped,
+      },
+      version: createdVersion,
+    });
       report: {
         total_processed: items.length,
         added_count: added.length,
