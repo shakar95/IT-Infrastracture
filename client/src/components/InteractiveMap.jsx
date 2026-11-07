@@ -62,7 +62,7 @@ export default function InteractiveMap({
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
-  const { racks } = useRacks();
+  const { racks, updateRackPosition, unpinRack } = useRacks();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
   const [isRackModalOpen, setIsRackModalOpen] = useState(false);
@@ -71,10 +71,15 @@ export default function InteractiveMap({
   // 1. All State Hooks
   const [selectedPlanId, setSelectedPlanId] = useState(initialSelectedPlanId || floorPlans[0]?.id || '');
   const [selectedDevice, setSelectedDevice] = useState(initialSelectedDevice || null);
+  const [selectedRack, setSelectedRack] = useState(null);
   const [pingStatus, setPingStatus] = useState(null);
   const [deviceToPlace, setDeviceToPlace] = useState(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [selectedDeviceToAssign, setSelectedDeviceToAssign] = useState(null);
+  const [selectedRackToAssign, setSelectedRackToAssign] = useState(null);
+  const [placementModalTab, setPlacementModalTab] = useState('equipment'); // 'equipment' | 'racks'
+  const [trayTab, setTrayTab] = useState('equipment'); // 'equipment' | 'racks'
+  const [rackSearch, setRackSearch] = useState('');
   const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [isEditPlanModalOpen, setIsEditPlanModalOpen] = useState(false);
@@ -127,6 +132,26 @@ export default function InteractiveMap({
 
   // Devices not yet placed on this floor plan
   const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
+
+  // Server Racks placed on this floor plan
+  const pinnedRacks = racks.filter(
+    (r) => r.floor_plan_id === activePlan?.id && r.pos_x !== null && r.pos_y !== null
+  );
+
+  // Server Racks not placed on this floor plan (or unpinned anywhere)
+  const unpinnedRacks = racks.filter((r) => !r.floor_plan_id || r.pos_x === null);
+
+  // Filtered racks for assignment modal
+  const filteredRacksToAssign = unpinnedRacks.filter((rack) => {
+    if (!rackSearch.trim()) return true;
+    const q = rackSearch.toLowerCase().trim();
+    return (
+      rack.name?.toLowerCase().includes(q) ||
+      rack.nameKu?.toLowerCase().includes(q) ||
+      rack.location?.toLowerCase().includes(q) ||
+      rack.zone?.toLowerCase().includes(q)
+    );
+  });
 
   // Filtered devices for the placement assignment modal
   const filteredDevicesToAssign = unpinnedDevices.filter((dev) => {
@@ -250,21 +275,60 @@ export default function InteractiveMap({
     try {
       setIsSavingZone(true);
       setDeviceZone(newZone);
+      const isRack = newZone === 'rack';
       const updatedPayload = {
         ...selectedDevice,
         placement_zone: newZone || null,
+        rack_name: isRack
+          ? (selectedDevice.rack_name || racks[0]?.name || 'Main 42U Server Rack A')
+          : selectedDevice.rack_name,
       };
       if (onUpdateDevice) {
         await onUpdateDevice(selectedDevice.id, updatedPayload);
       } else {
         await api.updateDevice(selectedDevice.id, updatedPayload);
       }
-      setSelectedDevice((prev) => (prev ? { ...prev, placement_zone: newZone || null } : prev));
+      setSelectedDevice((prev) =>
+        prev
+          ? {
+              ...prev,
+              placement_zone: newZone || null,
+              rack_name: isRack ? (prev.rack_name || racks[0]?.name || 'Main 42U Server Rack A') : prev.rack_name,
+            }
+          : prev
+      );
     } catch (err) {
       alert(err.message || 'Failed to update location zone');
       setDeviceZone(selectedDevice.placement_zone || '');
     } finally {
       setIsSavingZone(false);
+    }
+  };
+
+  const handleUpdateDeviceRack = async (newRackName, newRackUnit) => {
+    if (!selectedDevice) return;
+    try {
+      const updatedPayload = {
+        ...selectedDevice,
+        rack_name: newRackName || null,
+        rack_unit: newRackUnit !== undefined ? (newRackUnit || null) : selectedDevice.rack_unit,
+      };
+      if (onUpdateDevice) {
+        await onUpdateDevice(selectedDevice.id, updatedPayload);
+      } else {
+        await api.updateDevice(selectedDevice.id, updatedPayload);
+      }
+      setSelectedDevice((prev) =>
+        prev
+          ? {
+              ...prev,
+              rack_name: newRackName || null,
+              rack_unit: newRackUnit !== undefined ? (newRackUnit || null) : prev.rack_unit,
+            }
+          : prev
+      );
+    } catch (err) {
+      alert(err.message || 'Failed to update rack assignment');
     }
   };
 
@@ -342,7 +406,7 @@ export default function InteractiveMap({
   // Drag Panning Handlers
   const handleMouseDown = (e) => {
     // Ignore clicks on pins, buttons, inputs, popovers
-    if (e.target.closest('.device-pin, .interactive-control, button, input, .quick-assign-popover')) {
+    if (e.target.closest('.device-pin, .rack-pin, .interactive-control, button, input, .quick-assign-popover')) {
       return;
     }
     setIsDragging(true);
@@ -368,12 +432,13 @@ export default function InteractiveMap({
     if (!isDragging) return;
     setIsDragging(false);
 
-    // Open device placement picker if tapped on blueprint and there are unpinned devices or in placement mode
+    // Open device/rack placement picker if tapped on blueprint and there are unpinned items or in placement mode
     if (!hasDraggedSignificantlyRef.current) {
-      if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0) {
+      if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0 || unpinnedRacks.length > 0) {
         handleBlueprintClick(e);
       } else {
         setSelectedDevice(null);
+        setSelectedRack(null);
       }
     }
   };
@@ -384,7 +449,7 @@ export default function InteractiveMap({
 
   // Multi-Touch Handlers (Mobile & iPad / Tablet Pan + Pinch-to-Zoom)
   const handleTouchStart = (e) => {
-    if (e.target.closest('.device-pin, .interactive-control, button, input, .quick-assign-popover')) {
+    if (e.target.closest('.device-pin, .rack-pin, .interactive-control, button, input, .quick-assign-popover')) {
       return;
     }
 
@@ -433,15 +498,16 @@ export default function InteractiveMap({
       setIsDragging(false);
       pinchInitialDistRef.current = 0;
 
-      // Open device placement picker on mobile tap if unpinned devices exist or in placement mode
+      // Open device/rack placement picker on mobile tap if unpinned items exist or in placement mode
       if (!hasDraggedSignificantlyRef.current && duration < 350) {
-        if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0) {
+        if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0 || unpinnedRacks.length > 0) {
           handleBlueprintClick({
             clientX: touchStartPosRef.current.x,
             clientY: touchStartPosRef.current.y,
           });
         } else {
           setSelectedDevice(null);
+          setSelectedRack(null);
         }
       }
     } else if (e.touches.length === 1) {
@@ -481,11 +547,20 @@ export default function InteractiveMap({
     setActiveClickCoord({ x: clampedX, y: clampedY });
     setAssignSearch('');
     setAssignCategory('all');
+    setRackSearch('');
 
     if (deviceToPlace) {
       setSelectedDeviceToAssign(deviceToPlace);
+      setSelectedRackToAssign(null);
+      setPlacementModalTab('equipment');
     } else {
-      setSelectedDeviceToAssign(null); // Never auto-select or auto-pick! Wait for manual selection
+      setSelectedDeviceToAssign(null);
+      setSelectedRackToAssign(null);
+      if (unpinnedDevices.length === 0 && unpinnedRacks.length > 0) {
+        setPlacementModalTab('racks');
+      } else {
+        setPlacementModalTab('equipment');
+      }
     }
   };
 
@@ -506,10 +581,40 @@ export default function InteractiveMap({
 
     triggerPlacementFlash(activeClickCoord.x, activeClickCoord.y);
     setSelectedDevice(device);
+    setSelectedRack(null);
     setActiveClickCoord(null);
     setDeviceToPlace(null);
     setSelectedDeviceToAssign(null);
     setIsPlacementMode(false);
+  };
+
+  // Assign chosen Server Rack to active clicked coordinate
+  const handleAssignRackToCoord = (rack) => {
+    if (!activeClickCoord || !activePlan || !rack) return;
+
+    updateRackPosition(rack.id, {
+      floor_plan_id: activePlan.id,
+      pos_x: activeClickCoord.x,
+      pos_y: activeClickCoord.y,
+    });
+
+    triggerPlacementFlash(activeClickCoord.x, activeClickCoord.y);
+    setSelectedRack({
+      ...rack,
+      floor_plan_id: activePlan.id,
+      pos_x: activeClickCoord.x,
+      pos_y: activeClickCoord.y,
+    });
+    setSelectedDevice(null);
+    setActiveClickCoord(null);
+    setSelectedRackToAssign(null);
+    setIsPlacementMode(false);
+  };
+
+  const handleUnpinRack = (rack) => {
+    if (!rack) return;
+    unpinRack(rack.id);
+    setSelectedRack(null);
   };
 
   const handleSimulatePing = (ip) => {
@@ -850,7 +955,8 @@ export default function InteractiveMap({
               )}
               <span className="text-slate-600">|</span>
               <span className="text-blue-400 font-mono font-bold">
-                {pinnedDevices.length} {isKu ? 'ئامێر جێگیرکراوە' : 'pins placed'}
+                {pinnedDevices.length} {isKu ? 'ئامێر' : 'devices'}
+                {pinnedRacks.length > 0 && ` • ${pinnedRacks.length} ${isKu ? 'ڕاک' : 'racks'}`}
               </span>
             </div>
 
@@ -1024,6 +1130,7 @@ export default function InteractiveMap({
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedDevice(dev);
+                          setSelectedRack(null);
                           setPingStatus(null);
                           setActiveClickCoord(null);
                         }}
@@ -1066,6 +1173,96 @@ export default function InteractiveMap({
                             <p className="text-[10px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
                           </div>
                           <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Interactive Server Rack Pins */}
+                  {pinnedRacks.map((rack) => {
+                    const isSelected = selectedRack?.id === rack.id;
+                    const devicesInThisRack = devices.filter(
+                      (d) =>
+                        d.rack_name &&
+                        (d.rack_name.toLowerCase() === rack.name.toLowerCase() ||
+                          (rack.nameKu && d.rack_name.toLowerCase() === rack.nameKu.toLowerCase()) ||
+                          d.rack_name === rack.id)
+                    );
+
+                    return (
+                      <div
+                        key={`rack-pin-${rack.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedRack(rack);
+                          setSelectedDevice(null);
+                          setPingStatus(null);
+                          setActiveClickCoord(null);
+                        }}
+                        style={{
+                          left: `${rack.pos_x}%`,
+                          top: `${rack.pos_y}%`,
+                          transform: 'translate(-50%, -20px)',
+                        }}
+                        className="rack-pin absolute cursor-pointer group z-20 flex flex-col items-center select-none"
+                      >
+                        {/* Rack Icon Container */}
+                        <div
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-125 ${
+                            isSelected
+                              ? 'scale-125 ring-4 ring-indigo-400 shadow-xl shadow-indigo-500/50'
+                              : 'shadow-lg'
+                          }`}
+                          style={{
+                            backgroundColor: '#0f172a',
+                            border: '2.5px solid #6366f1',
+                            boxShadow: isSelected
+                              ? '0 0 22px rgba(99, 102, 241, 0.8)'
+                              : '0 4px 12px rgba(0,0,0,0.8)',
+                          }}
+                        >
+                          <Server className="w-5 h-5 text-indigo-400 drop-shadow" />
+                        </div>
+
+                        {/* Persistent High-Contrast Rack Label Pill Under Pin */}
+                        <div className="mt-1 px-2 py-0.5 rounded-md bg-slate-950/95 border border-indigo-500/70 shadow-lg pointer-events-none whitespace-nowrap flex items-center gap-1.5">
+                          <span className="text-[8px] font-extrabold uppercase px-1 rounded bg-indigo-500/30 text-indigo-300 font-mono">
+                            RACK
+                          </span>
+                          <span className="text-[9px] font-bold font-mono text-white tracking-tight block leading-none">
+                            {isKu ? (rack.nameKu || rack.name) : rack.name}
+                          </span>
+                          <span className="text-[9px] font-mono text-indigo-400 font-bold">
+                            ({rack.totalUnits}U)
+                          </span>
+                        </div>
+
+                        {/* Mini badge showing count of mounted devices */}
+                        {devicesInThisRack.length > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full bg-indigo-600 text-[9px] font-bold text-white border-2 border-slate-900 shadow-md font-mono">
+                            {devicesInThisRack.length}
+                          </span>
+                        )}
+
+                        {/* Rich Hover / Touch Tooltip */}
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
+                          <div className="px-3 py-2 bg-slate-900 border border-indigo-500/60 rounded-xl shadow-2xl text-center space-y-1">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Server className="w-4 h-4 text-indigo-400" />
+                              <p className="text-xs font-bold font-mono text-white">
+                                {isKu ? (rack.nameKu || rack.name) : rack.name}
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-mono">
+                              <span className="text-indigo-400 font-semibold">{rack.totalUnits}U Capacity</span>
+                              <span>•</span>
+                              <span className="text-emerald-400 font-semibold">{devicesInThisRack.length} Mounted</span>
+                            </div>
+                            {rack.location && (
+                              <p className="text-[10px] text-slate-400">{rack.location}</p>
+                            )}
+                          </div>
+                          <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-indigo-500/60" />
                         </div>
                       </div>
                     );
@@ -1115,14 +1312,14 @@ export default function InteractiveMap({
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Header */}
-                  <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shadow-inner shrink-0">
                         <MapPin className="w-5 h-5 text-blue-400" />
                       </div>
                       <div>
                         <h4 className="text-base font-bold text-white tracking-tight">
-                          {isKu ? 'دیاریکردنی ئامێر بۆ پینکردن لەم خاڵەدا' : 'Pin Equipment at Location'}
+                          {isKu ? 'دیاریکردنی ئامێر یان ڕاک بۆ پینکردن لەم خاڵەدا' : 'Pin Equipment or Rack at Location'}
                         </h4>
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
                           <span className="font-medium text-slate-300">
@@ -1142,8 +1339,10 @@ export default function InteractiveMap({
                         setIsPlacementMode(false);
                         setDeviceToPlace(null);
                         setSelectedDeviceToAssign(null);
+                        setSelectedRackToAssign(null);
                         setAssignSearch('');
                         setAssignCategory('all');
+                        setRackSearch('');
                       }}
                       className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer"
                     >
@@ -1151,219 +1350,418 @@ export default function InteractiveMap({
                     </button>
                   </div>
 
-                  {/* Search & Category Filter Bar */}
-                  <div className="pt-4 pb-2 space-y-3 shrink-0">
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={assignSearch}
-                        onChange={(e) => setAssignSearch(e.target.value)}
-                        placeholder={isKu ? 'گەڕان بەپێی لەیبڵ، براند، مۆدێل، یان ئایپی...' : 'Search equipment by label, brand, model, IP...'}
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
-                        autoFocus
-                      />
-                      {assignSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setAssignSearch('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Quick Category Tabs */}
-                    {categories.length > 0 && (
-                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] no-scrollbar">
-                        <button
-                          type="button"
-                          onClick={() => setAssignCategory('all')}
-                          className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
-                            assignCategory === 'all'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                          }`}
-                        >
-                          {isKu ? 'هەموو بەشەکان' : 'All'} ({unpinnedDevices.length})
-                        </button>
-                        {categories
-                          .filter((c) =>
-                            unpinnedDevices.some((d) => {
-                              const m = boqModels.find((b) => b.id === d.boq_model_id);
-                              return m?.category_id === c.id;
-                            })
-                          )
-                          .map((cat) => {
-                            const count = unpinnedDevices.filter((d) => {
-                              const m = boqModels.find((b) => b.id === d.boq_model_id);
-                              return m?.category_id === cat.id;
-                            }).length;
-                            return (
-                              <button
-                                key={cat.id}
-                                type="button"
-                                onClick={() => setAssignCategory(cat.id)}
-                                className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
-                                  assignCategory === cat.id
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                                }`}
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color_code || '#3B82F6' }} />
-                                <span>{isKu ? (cat.name_ku || cat.name) : cat.name}</span>
-                                <span className="opacity-70 text-[10px]">({count})</span>
-                              </button>
-                            );
-                          })}
-                      </div>
-                    )}
+                  {/* Mode Tabs: Equipment vs Server Racks */}
+                  <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 shrink-0 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setPlacementModalTab('equipment')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        placementModalTab === 'equipment'
+                          ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>{isKu ? 'ئامێرەکان' : 'Equipment'}</span>
+                      <span className="text-[10px] font-mono opacity-80">({unpinnedDevices.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlacementModalTab('racks')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        placementModalTab === 'racks'
+                          ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Server className="w-3.5 h-3.5" />
+                      <span>{isKu ? 'ڕاکەکانی سێرڤەر' : 'Server Racks'}</span>
+                      <span className="text-[10px] font-mono opacity-80">({unpinnedRacks.length})</span>
+                    </button>
                   </div>
 
-                  {/* Equipment List (Scrollable Cards with Thumbnails) */}
-                  <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[360px] space-y-2 pr-1 custom-scrollbar">
-                    {filteredDevicesToAssign.length === 0 ? (
-                      <div className="py-12 flex flex-col items-center justify-center text-center text-slate-500 space-y-2">
-                        <Cpu className="w-10 h-10 text-slate-600 stroke-1" />
-                        <p className="text-xs font-medium text-slate-400">
-                          {assignSearch
-                            ? (isKu ? 'هیچ ئامێرێک نەدۆزرایەوە بەپێی ئەم گەڕانە' : 'No equipment found matching filter')
-                            : (isKu ? 'هیچ ئامێرێکی دانەنراو نەماوە' : 'No unpinned equipment remaining')}
-                        </p>
-                      </div>
-                    ) : (
-                      filteredDevicesToAssign.map((dev) => {
-                        const m = boqModels.find((b) => b.id === dev.boq_model_id);
-                        const cat = m ? categories.find((c) => c.id === m.category_id) : null;
-                        const isSelected = selectedDeviceToAssign?.id === dev.id;
-                        const productImg = m?.product_image_url || '/default-ict-device.svg';
+                  {placementModalTab === 'equipment' ? (
+                    <>
+                      {/* Search & Category Filter Bar */}
+                      <div className="pt-3 pb-2 space-y-2.5 shrink-0">
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={assignSearch}
+                            onChange={(e) => setAssignSearch(e.target.value)}
+                            placeholder={isKu ? 'گەڕان بەپێی لەیبڵ، براند، مۆدێل، یان ئایپی...' : 'Search equipment by label, brand, model, IP...'}
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
+                            autoFocus
+                          />
+                          {assignSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAssignSearch('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
 
-                        return (
-                          <div
-                            key={dev.id}
-                            onClick={() => setSelectedDeviceToAssign(dev)}
-                            onDoubleClick={() => handleAssignDeviceToCoord(dev)}
-                            className={`group p-3 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center justify-between gap-3 ${
-                              isSelected
-                                ? 'bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/30 shadow-lg shadow-blue-950/50'
-                                : 'bg-slate-950/80 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700'
-                            }`}
-                          >
-                            {/* Left: Device Thumbnail & Info */}
-                            <div className="flex items-center gap-3 min-w-0">
-                              {/* Small Device Thumbnail Image */}
-                              <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800/80 p-1 flex items-center justify-center shrink-0 overflow-hidden relative group-hover:border-slate-700 shadow-inner">
-                                <img
-                                  src={productImg}
-                                  alt={m?.model || 'Device'}
-                                  className="w-full h-full object-contain"
-                                  loading="lazy"
-                                />
-                                <div
-                                  className="absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border border-slate-900"
-                                  style={{ backgroundColor: cat?.color_code || '#3B82F6' }}
-                                />
-                              </div>
-
-                              {/* Details */}
-                              <div className="min-w-0 space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-xs font-bold text-white tracking-tight">
-                                    {dev.custom_label_id}
-                                  </span>
-                                  {cat && (
-                                    <span
-                                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold border"
-                                      style={{
-                                        backgroundColor: `${cat.color_code || '#3B82F6'}15`,
-                                        color: cat.color_code || '#3B82F6',
-                                        borderColor: `${cat.color_code || '#3B82F6'}30`,
-                                      }}
-                                    >
-                                      {isKu ? (cat.name_ku || cat.name) : cat.name}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-slate-300 font-medium truncate">
-                                  {m ? `${m.brand} ${m.model}` : 'Generic Device'}
-                                </p>
-                                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                                  {dev.ip_address ? (
-                                    <span className="text-cyan-400 font-semibold">{dev.ip_address}</span>
-                                  ) : (
-                                    <span className="text-slate-500">No IP</span>
-                                  )}
-                                  {dev.switch_name && (
-                                    <span>• {dev.switch_name} [{dev.switch_port || 'P1'}]</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Right: Quick Action Button */}
-                            <div className="shrink-0 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAssignDeviceToCoord(dev);
-                                }}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/40'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
-                                }`}
-                              >
-                                <MapPin className="w-3.5 h-3.5" />
-                                <span>{isKu ? 'پین بکە' : 'Pin Here'}</span>
-                              </button>
-                            </div>
+                        {/* Quick Category Tabs */}
+                        {categories.length > 0 && (
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] no-scrollbar">
+                            <button
+                              type="button"
+                              onClick={() => setAssignCategory('all')}
+                              className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
+                                assignCategory === 'all'
+                                  ? 'bg-blue-600 text-white shadow-sm'
+                                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                              }`}
+                            >
+                              {isKu ? 'هەموو بەشەکان' : 'All'} ({unpinnedDevices.length})
+                            </button>
+                            {categories
+                              .filter((c) =>
+                                unpinnedDevices.some((d) => {
+                                  const m = boqModels.find((b) => b.id === d.boq_model_id);
+                                  return m?.category_id === c.id;
+                                })
+                              )
+                              .map((cat) => {
+                                const count = unpinnedDevices.filter((d) => {
+                                  const m = boqModels.find((b) => b.id === d.boq_model_id);
+                                  return m?.category_id === cat.id;
+                                }).length;
+                                return (
+                                  <button
+                                    key={cat.id}
+                                    type="button"
+                                    onClick={() => setAssignCategory(cat.id)}
+                                    className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                                      assignCategory === cat.id
+                                        ? 'bg-blue-600 text-white shadow-sm'
+                                        : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                    }`}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color_code || '#3B82F6' }} />
+                                    <span>{isKu ? (cat.name_ku || cat.name) : cat.name}</span>
+                                    <span className="opacity-70 text-[10px]">({count})</span>
+                                  </button>
+                                );
+                              })}
                           </div>
-                        );
-                      })
-                    )}
-                  </div>
+                        )}
+                      </div>
 
-                  {/* Modal Footer */}
-                  <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
-                    <span className="text-xs text-slate-400">
-                      {selectedDeviceToAssign ? (
-                        <span className="text-blue-400 font-semibold">
-                          {isKu ? 'ئامێری هەڵبژێردراو:' : 'Selected:'} <strong className="text-white font-mono">{selectedDeviceToAssign.custom_label_id}</strong>
+                      {/* Equipment List (Scrollable Cards with Thumbnails) */}
+                      <div className="flex-1 overflow-y-auto min-h-[200px] max-h-[340px] space-y-2 pr-1 custom-scrollbar">
+                        {filteredDevicesToAssign.length === 0 ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-center text-slate-500 space-y-2">
+                            <Cpu className="w-10 h-10 text-slate-600 stroke-1" />
+                            <p className="text-xs font-medium text-slate-400">
+                              {assignSearch
+                                ? (isKu ? 'هیچ ئامێرێک نەدۆزرایەوە بەپێی ئەم گەڕانە' : 'No equipment found matching filter')
+                                : (isKu ? 'هیچ ئامێرێکی دانەنراو نەماوە' : 'No unpinned equipment remaining')}
+                            </p>
+                          </div>
+                        ) : (
+                          filteredDevicesToAssign.map((dev) => {
+                            const m = boqModels.find((b) => b.id === dev.boq_model_id);
+                            const cat = m ? categories.find((c) => c.id === m.category_id) : null;
+                            const isSelected = selectedDeviceToAssign?.id === dev.id;
+                            const productImg = m?.product_image_url || '/default-ict-device.svg';
+
+                            return (
+                              <div
+                                key={dev.id}
+                                onClick={() => setSelectedDeviceToAssign(dev)}
+                                onDoubleClick={() => handleAssignDeviceToCoord(dev)}
+                                className={`group p-3 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center justify-between gap-3 ${
+                                  isSelected
+                                    ? 'bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/30 shadow-lg shadow-blue-950/50'
+                                    : 'bg-slate-950/80 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700'
+                                }`}
+                              >
+                                {/* Left: Device Thumbnail & Info */}
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {/* Small Device Thumbnail Image */}
+                                  <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800/80 p-1 flex items-center justify-center shrink-0 overflow-hidden relative group-hover:border-slate-700 shadow-inner">
+                                    <img
+                                      src={productImg}
+                                      alt={m?.model || 'Device'}
+                                      className="w-full h-full object-contain"
+                                      loading="lazy"
+                                    />
+                                    <div
+                                      className="absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border border-slate-900"
+                                      style={{ backgroundColor: cat?.color_code || '#3B82F6' }}
+                                    />
+                                  </div>
+
+                                  {/* Details */}
+                                  <div className="min-w-0 space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs font-bold text-white tracking-tight">
+                                        {dev.custom_label_id}
+                                      </span>
+                                      {cat && (
+                                        <span
+                                          className="px-2 py-0.5 rounded-md text-[10px] font-semibold border"
+                                          style={{
+                                            backgroundColor: `${cat.color_code || '#3B82F6'}15`,
+                                            color: cat.color_code || '#3B82F6',
+                                            borderColor: `${cat.color_code || '#3B82F6'}30`,
+                                          }}
+                                        >
+                                          {isKu ? (cat.name_ku || cat.name) : cat.name}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-slate-300 font-medium truncate">
+                                      {m ? `${m.brand} ${m.model}` : 'Generic Device'}
+                                    </p>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                                      {dev.ip_address ? (
+                                        <span className="text-cyan-400 font-semibold">{dev.ip_address}</span>
+                                      ) : (
+                                        <span className="text-slate-500">No IP</span>
+                                      )}
+                                      {dev.switch_name && (
+                                        <span>• {dev.switch_name} [{dev.switch_port || 'P1'}]</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Right: Quick Action Button */}
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAssignDeviceToCoord(dev);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/40'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
+                                    }`}
+                                  >
+                                    <MapPin className="w-3.5 h-3.5" />
+                                    <span>{isKu ? 'پین بکە' : 'Pin Here'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Modal Footer for Equipment */}
+                      <div className="pt-3.5 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                        <span className="text-xs text-slate-400">
+                          {selectedDeviceToAssign ? (
+                            <span className="text-blue-400 font-semibold">
+                              {isKu ? 'ئامێری هەڵبژێردراو:' : 'Selected:'} <strong className="text-white font-mono">{selectedDeviceToAssign.custom_label_id}</strong>
+                            </span>
+                          ) : (
+                            <span>{isKu ? 'تکایە ئامێرێک لە لیستەکە هەڵبژێرە' : 'Select an equipment to pin'}</span>
+                          )}
                         </span>
-                      ) : (
-                        <span>{isKu ? 'تکایە ئامێرێک لە لیستەکە هەڵبژێرە' : 'Select an equipment to pin'}</span>
-                      )}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveClickCoord(null);
-                          setIsPlacementMode(false);
-                          setDeviceToPlace(null);
-                          setSelectedDeviceToAssign(null);
-                          setAssignSearch('');
-                          setAssignCategory('all');
-                        }}
-                        className="py-2 px-3.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
-                      >
-                        {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!selectedDeviceToAssign}
-                        onClick={() => {
-                          if (selectedDeviceToAssign) handleAssignDeviceToCoord(selectedDeviceToAssign);
-                        }}
-                        className="py-2 px-4 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white shadow-lg shadow-blue-900/40 transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Check className="w-4 h-4" />
-                        <span>{isKu ? 'سەلماندن و دانان' : 'Confirm & Pin'}</span>
-                      </button>
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveClickCoord(null);
+                              setIsPlacementMode(false);
+                              setDeviceToPlace(null);
+                              setSelectedDeviceToAssign(null);
+                              setSelectedRackToAssign(null);
+                              setAssignSearch('');
+                              setAssignCategory('all');
+                              setRackSearch('');
+                            }}
+                            className="py-2 px-3.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                          >
+                            {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedDeviceToAssign}
+                            onClick={() => {
+                              if (selectedDeviceToAssign) handleAssignDeviceToCoord(selectedDeviceToAssign);
+                            }}
+                            className="py-2 px-4 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white shadow-lg shadow-blue-900/40 transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>{isKu ? 'سەلماندن و دانان' : 'Confirm & Pin'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Search for Server Racks */}
+                      <div className="pt-3 pb-2 shrink-0">
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={rackSearch}
+                            onChange={(e) => setRackSearch(e.target.value)}
+                            placeholder={isKu ? 'گەڕان بۆ ڕاک بەپێی ناو، شوێن، زۆن...' : 'Search server racks by name, room, zone...'}
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl pl-10 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition shadow-inner"
+                            autoFocus
+                          />
+                          {rackSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setRackSearch('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Server Racks List */}
+                      <div className="flex-1 overflow-y-auto min-h-[200px] max-h-[340px] space-y-2 pr-1 custom-scrollbar">
+                        {filteredRacksToAssign.length === 0 ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-center text-slate-500 space-y-3">
+                            <Server className="w-10 h-10 text-slate-600 stroke-1" />
+                            <p className="text-xs font-medium text-slate-400">
+                              {rackSearch
+                                ? (isKu ? 'هیچ ڕاکێک نەدۆزرایەوە بەپێی ئەم گەڕانە' : 'No server racks match your search')
+                                : (isKu ? 'هەموو ڕاکەکان لەسەر نەخشە جێگیرکراون!' : 'All server racks are currently pinned to maps!')}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveClickCoord(null);
+                                setIsRackModalOpen(true);
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{isKu ? '+ دروستکردنی ڕاکی نوێ' : '+ Create New Rack'}</span>
+                            </button>
+                          </div>
+                        ) : (
+                          filteredRacksToAssign.map((rack) => {
+                            const isSelected = selectedRackToAssign?.id === rack.id;
+                            const devicesInThisRack = devices.filter(
+                              (d) =>
+                                d.rack_name &&
+                                (d.rack_name.toLowerCase() === rack.name.toLowerCase() ||
+                                  (rack.nameKu && d.rack_name.toLowerCase() === rack.nameKu.toLowerCase()) ||
+                                  d.rack_name === rack.id)
+                            );
+
+                            return (
+                              <div
+                                key={rack.id}
+                                onClick={() => setSelectedRackToAssign(rack)}
+                                onDoubleClick={() => handleAssignRackToCoord(rack)}
+                                className={`group p-3 rounded-2xl border transition-all duration-150 cursor-pointer flex items-center justify-between gap-3 ${
+                                  isSelected
+                                    ? 'bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/30 shadow-lg shadow-indigo-950/50'
+                                    : 'bg-slate-950/80 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700'
+                                }`}
+                              >
+                                {/* Left: Rack Icon & Info */}
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-12 h-12 rounded-xl bg-slate-900 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-inner group-hover:border-indigo-500/60 transition">
+                                    <Server className="w-6 h-6 text-indigo-400 drop-shadow" />
+                                  </div>
+
+                                  <div className="min-w-0 space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs font-bold text-white tracking-tight">
+                                        {isKu ? (rack.nameKu || rack.name) : rack.name}
+                                      </span>
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono">
+                                        {rack.totalUnits}U Cabinet
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-300 font-medium truncate">
+                                      {rack.location || (isKu ? 'ژووری سێرڤەر' : 'Server Room')}
+                                      {rack.zone && ` • ${formatEstateZone(rack.zone, lang)}`}
+                                    </p>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                                      <span className="text-emerald-400 font-semibold">
+                                        {devicesInThisRack.length} {isKu ? 'ئامێری تێدایە' : 'devices mounted'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Right: Quick Action Button */}
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAssignRackToCoord(rack);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/40'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
+                                    }`}
+                                  >
+                                    <MapPin className="w-3.5 h-3.5" />
+                                    <span>{isKu ? 'پین بکە' : 'Pin Rack Here'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Modal Footer for Racks */}
+                      <div className="pt-3.5 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                        <span className="text-xs text-slate-400">
+                          {selectedRackToAssign ? (
+                            <span className="text-indigo-400 font-semibold">
+                              {isKu ? 'ڕاکی هەڵبژێردراو:' : 'Selected:'} <strong className="text-white font-mono">{isKu ? (selectedRackToAssign.nameKu || selectedRackToAssign.name) : selectedRackToAssign.name}</strong>
+                            </span>
+                          ) : (
+                            <span>{isKu ? 'تکایە ڕاکێک لە لیستەکە هەڵبژێرە' : 'Select a server rack to pin'}</span>
+                          )}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveClickCoord(null);
+                              setIsPlacementMode(false);
+                              setDeviceToPlace(null);
+                              setSelectedDeviceToAssign(null);
+                              setSelectedRackToAssign(null);
+                              setAssignSearch('');
+                              setAssignCategory('all');
+                              setRackSearch('');
+                            }}
+                            className="py-2 px-3.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                          >
+                            {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedRackToAssign}
+                            onClick={() => {
+                              if (selectedRackToAssign) handleAssignRackToCoord(selectedRackToAssign);
+                            }}
+                            className="py-2 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white shadow-lg shadow-indigo-900/40 transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>{isKu ? 'سەلماندن و دانان' : 'Confirm & Pin Rack'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1372,10 +1770,136 @@ export default function InteractiveMap({
 
         {/* 3. Right Sidebar: Staging Tray & Device Inspector (Mobile & iPad Drawer Supported) */}
         <div className={`w-full lg:w-72 xl:w-80 shrink-0 space-y-4 ${
-          mobileActiveView === 'devices' || (mobileActiveView === 'canvas' && selectedDevice) ? 'block' : 'hidden lg:block'
+          mobileActiveView === 'devices' || (mobileActiveView === 'canvas' && (selectedDevice || selectedRack)) ? 'block' : 'hidden lg:block'
         }`}>
-          {/* Selected Device Inspector Drawer */}
-          {selectedDevice ? (
+          {/* Selected Rack Inspector Drawer */}
+          {selectedRack ? (
+            <div className="bg-slate-900/95 border border-indigo-500/50 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 shadow-sm">
+                    <Server className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 font-mono">
+                      {isKu ? 'پشکنینی ڕاک' : 'Server Rack'} • {selectedRack.totalUnits}U
+                    </span>
+                    <h3 className="text-base font-bold text-white font-mono">
+                      {isKu ? (selectedRack.nameKu || selectedRack.name) : selectedRack.name}
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedRack(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Coordinates Pill */}
+              <div className="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono">
+                <span className="text-slate-400">{isKu ? 'شوێن لەسەر نەخشە:' : 'Map Coordinates:'}</span>
+                <span className="text-indigo-400 font-bold">
+                  X: {selectedRack.pos_x ?? '—'}% / Y: {selectedRack.pos_y ?? '—'}%
+                </span>
+              </div>
+
+              {/* Location & Zone Details */}
+              <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">{isKu ? 'زۆنی پرۆژە:' : 'Zone:'}</span>
+                  <span className="text-slate-200 font-semibold">{formatEstateZone(selectedRack.zone, lang)}</span>
+                </div>
+                {selectedRack.location && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">{isKu ? 'ژوور / شوێن:' : 'Location:'}</span>
+                    <span className="text-slate-300 truncate max-w-[170px]">{selectedRack.location}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Mounted Equipment in this Rack */}
+              {(() => {
+                const rackDevices = devices.filter(
+                  (d) =>
+                    d.rack_name &&
+                    (d.rack_name.toLowerCase() === selectedRack.name.toLowerCase() ||
+                      (selectedRack.nameKu && d.rack_name.toLowerCase() === selectedRack.nameKu.toLowerCase()) ||
+                      d.rack_name === selectedRack.id)
+                );
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{isKu ? 'ئامێرەکانی ناو ئەم ڕاکە:' : 'Mounted Equipment:'}</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {rackDevices.length} {isKu ? 'ئامێر' : 'items'}
+                      </span>
+                    </div>
+
+                    <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                      {rackDevices.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 bg-slate-950/60 rounded-xl border border-slate-800/80 italic">
+                          {isKu ? 'هیچ ئامێرێک بۆ ئەم ڕاکە دیاری نەکراوە' : 'No equipment currently assigned to this rack'}
+                        </div>
+                      ) : (
+                        rackDevices.map((dev) => {
+                          const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                          return (
+                            <div
+                              key={dev.id}
+                              onClick={() => {
+                                setSelectedDevice(dev);
+                                setSelectedRack(null);
+                              }}
+                              className="p-2 bg-slate-950/80 hover:bg-slate-800/60 rounded-xl border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-xs font-bold text-white">{dev.custom_label_id}</span>
+                                  {dev.rack_unit && (
+                                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+                                      {dev.rack_unit}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-400 truncate">{model ? `${model.brand} ${model.model}` : 'Device'}</p>
+                              </div>
+                              <span className="text-[10px] font-mono text-cyan-400 shrink-0">{dev.ip_address || '—'}</span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons for Selected Rack */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsRackModalOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 transition active:scale-95 cursor-pointer"
+                >
+                  <Settings2 className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{isKu ? 'بەڕێوەبردنی ئەم ڕاکە' : 'Manage / Rename Rack'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUnpinRack(selectedRack)}
+                  className="w-full px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-red-400 hover:bg-slate-800/50 transition cursor-pointer"
+                >
+                  {isKu ? 'لابردنی ڕاک لەسەر نەخشە' : 'Remove Rack from Blueprint'}
+                </button>
+              </div>
+            </div>
+          ) : selectedDevice ? (
             <div className="bg-slate-900/95 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
               {(() => {
                 const model = boqModels.find((m) => m.id === selectedDevice.boq_model_id) || selectedDevice.boq_model;
@@ -1601,6 +2125,66 @@ export default function InteractiveMap({
                 </div>
               </div>
 
+              {/* Target Server Rack Selection (Visible whenever device is in a rack or rack-mounted) */}
+              {(deviceZone === 'rack' || selectedDevice.placement_zone === 'rack' || model?.is_rack_mounted) && (
+                <div className="p-3 bg-indigo-950/40 rounded-xl border-2 border-indigo-500/50 space-y-2.5 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+                      <Server className="w-4 h-4 text-indigo-400" />
+                      <span>{isKu ? 'ڕاکی هەڵبژێردراو (Rack Selection)' : 'Assigned Server Rack'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsRackModalOpen(true)}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium inline-flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Settings2 className="w-3 h-3" />
+                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    {isKu
+                      ? 'ئەم ئامێرە لەناو ڕاک دایە. تکایە لەم لیستەدا ڕاکەکەی دیاری بکە:'
+                      : 'This equipment is mounted inside a server rack. Select target rack cabinet:'}
+                  </p>
+
+                  <div className="space-y-2">
+                    <select
+                      value={selectedDevice.rack_name || ''}
+                      onChange={(e) => handleUpdateDeviceRack(e.target.value)}
+                      className="w-full bg-slate-900 border border-indigo-500/60 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-indigo-400 shadow-inner cursor-pointer"
+                    >
+                      <option value="">{isKu ? '— ڕاکێک هەڵبژێرە —' : '— Select a Server Rack —'}</option>
+                      {racks.map((r) => (
+                        <option key={r.id} value={r.name}>
+                          {isKu ? (r.nameKu || r.name) : r.name} ({r.totalUnits}U) {r.location ? `— ${r.location}` : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Rack Unit (RU Position) Input */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-[11px] text-slate-400 font-mono shrink-0">
+                        {isKu ? 'شوێنی یونت (U):' : 'Rack Unit (U):'}
+                      </span>
+                      <input
+                        type="text"
+                        defaultValue={selectedDevice.rack_unit || ''}
+                        placeholder="e.g. U14, U1-U2"
+                        onBlur={(e) => handleUpdateDeviceRack(selectedDevice.rack_name, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleUpdateDeviceRack(selectedDevice.rack_name, e.currentTarget.value);
+                          }
+                        }}
+                        className="flex-1 bg-slate-900 border border-slate-700 focus:border-indigo-400 rounded-lg px-2.5 py-1 text-xs font-mono text-indigo-300 placeholder-slate-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Engineering Notes Section */}
               <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1727,78 +2311,188 @@ export default function InteractiveMap({
               </div>
             </div>
           ) : (
-            /* Unpinned Equipment Tray (Click to place) */
+            /* Unpinned Equipment & Server Racks Tray */
             <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white">{t.unpinnedDevices}</h3>
+                <h3 className="text-sm font-bold text-white">
+                  {trayTab === 'equipment' ? t.unpinnedDevices : (isKu ? 'ڕاکە جێگیرنەکراوەکان' : 'Unpinned Server Racks')}
+                </h3>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
-                  {unpinnedDevices.length}
+                  {trayTab === 'equipment' ? unpinnedDevices.length : unpinnedRacks.length}
                 </span>
               </div>
+
+              {/* Tray Tab Switcher */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setTrayTab('equipment')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                    trayTab === 'equipment'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>{isKu ? 'ئامێرەکان' : 'Equipment'}</span>
+                  <span className="text-[10px] font-mono opacity-80">({unpinnedDevices.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrayTab('racks')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 ${
+                    trayTab === 'racks'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Server className="w-3.5 h-3.5" />
+                  <span>{isKu ? 'ڕاکەکان' : 'Racks'}</span>
+                  <span className="text-[10px] font-mono opacity-80">({unpinnedRacks.length})</span>
+                </button>
+              </div>
+
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 {isKu
-                  ? 'لەسەر هەر ئامێرێک کلیک بکە یان ڕاستەوخۆ لەسەر نەخشەکە لە هەر خاڵێک کلیک بکە بۆ جێگیرکردن.'
-                  : 'Click a device below or click anywhere on the blueprint directly to anchor pins.'}
+                  ? 'کلیک لەسەر هەر خاڵێکی نەخشەکە بکە بۆ دانان و پینکردنی ئامێر یان ڕاکی هەڵبژێردراو.'
+                  : 'Click anywhere on the blueprint directly to anchor equipment or server racks.'}
               </p>
 
-              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-                {unpinnedDevices.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-500 italic">
-                    {isKu ? 'هەموو دیڤایسەکان لەسەر نەخشە جێگیرکراون!' : 'All devices are currently pinned to maps!'}
-                  </div>
-                ) : (
-                  unpinnedDevices.map((dev) => {
-                    const model = boqModels.find((m) => m.id === dev.boq_model_id);
-                    const category = model ? categories.find((c) => c.id === model.category_id) : null;
-                    const DevIcon = getIctDeviceIcon(dev, model, category);
-                    const isSelectedForPlacement = deviceToPlace?.id === dev.id;
+              {trayTab === 'equipment' ? (
+                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1 custom-scrollbar">
+                  {unpinnedDevices.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500 italic">
+                      {isKu ? 'هەموو دیڤایسەکان لەسەر نەخشە جێگیرکراون!' : 'All devices are currently pinned to maps!'}
+                    </div>
+                  ) : (
+                    unpinnedDevices.map((dev) => {
+                      const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                      const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                      const DevIcon = getIctDeviceIcon(dev, model, category);
+                      const isSelectedForPlacement = deviceToPlace?.id === dev.id;
 
-                    return (
-                      <div
-                        key={dev.id}
-                        onClick={() => {
-                          const isTogglingOff = isSelectedForPlacement;
-                          if (isTogglingOff) {
-                            setDeviceToPlace(null);
-                            setSelectedDeviceToAssign(null);
-                            setIsPlacementMode(false);
-                          } else {
-                            setDeviceToPlace(dev);
-                            setSelectedDeviceToAssign(dev);
-                            setIsPlacementMode(true);
-                            setMobileActiveView('canvas');
-                          }
-                          setActiveClickCoord(null);
-                        }}
-                        className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2.5 ${
-                          isSelectedForPlacement
-                            ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
-                            : 'bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                      return (
+                        <div
+                          key={dev.id}
+                          onClick={() => {
+                            const isTogglingOff = isSelectedForPlacement;
+                            if (isTogglingOff) {
+                              setDeviceToPlace(null);
+                              setSelectedDeviceToAssign(null);
+                              setIsPlacementMode(false);
+                            } else {
+                              setDeviceToPlace(dev);
+                              setSelectedDeviceToAssign(dev);
+                              setIsPlacementMode(true);
+                              setMobileActiveView('canvas');
+                            }
+                            setActiveClickCoord(null);
+                          }}
+                          className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2.5 ${
                             isSelectedForPlacement
-                              ? 'bg-blue-600 text-white border-blue-400'
-                              : 'bg-slate-900 border-slate-800 text-blue-400'
-                          }`}>
-                            <DevIcon className="w-4 h-4" />
+                              ? 'bg-blue-600/20 border-blue-500 text-white shadow-md'
+                              : 'bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                              isSelectedForPlacement
+                                ? 'bg-blue-600 text-white border-blue-400'
+                                : 'bg-slate-900 border-slate-800 text-blue-400'
+                            }`}>
+                              <DevIcon className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold font-mono text-white truncate">{dev.custom_label_id}</p>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {model ? `${model.brand} ${model.model}` : 'ELV Unit'}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold font-mono text-white truncate">{dev.custom_label_id}</p>
-                            <p className="text-[10px] text-slate-400 truncate">
-                              {model ? `${model.brand} ${model.model}` : 'ELV Unit'}
-                            </p>
-                          </div>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-blue-400 shrink-0">
+                            {isSelectedForPlacement ? (isKu ? 'جێگیرکردن...' : 'Placing...') : (isKu ? '+ دانان' : 'Pin +')}
+                          </span>
                         </div>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-blue-400 shrink-0">
-                          {isSelectedForPlacement ? (isKu ? 'جێگیرکردن...' : 'Placing...') : (isKu ? '+ دانان' : 'Pin +')}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1 custom-scrollbar">
+                  {unpinnedRacks.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500 space-y-2 italic">
+                      <p>{isKu ? 'هەموو ڕاکەکان لەسەر نەخشە جێگیرکراون!' : 'All server racks are currently pinned!'}</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsRackModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 transition cursor-pointer not-italic"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{isKu ? '+ ڕاکی نوێ' : '+ Add New Rack'}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    unpinnedRacks.map((rack) => {
+                      const devicesInThisRack = devices.filter(
+                        (d) =>
+                          d.rack_name &&
+                          (d.rack_name.toLowerCase() === rack.name.toLowerCase() ||
+                            (rack.nameKu && d.rack_name.toLowerCase() === rack.nameKu.toLowerCase()) ||
+                            d.rack_name === rack.id)
+                      );
+
+                      return (
+                        <div
+                          key={rack.id}
+                          className="p-3 rounded-xl border border-slate-800/80 bg-slate-950/70 hover:border-indigo-500/50 transition flex items-center justify-between gap-2.5"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border bg-slate-900 border-indigo-500/30 text-indigo-400">
+                              <Server className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-bold font-mono text-white truncate">
+                                  {isKu ? (rack.nameKu || rack.name) : rack.name}
+                                </p>
+                                <span className="text-[9px] font-mono font-bold px-1 rounded bg-indigo-500/20 text-indigo-300">
+                                  {rack.totalUnits}U
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                {rack.location || (isKu ? 'ژووری سێرڤەر' : 'Server Room')} • {devicesInThisRack.length} devs
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedRackToAssign(rack);
+                              setPlacementModalTab('racks');
+                              // prompt user by setting default active click coord or letting them click
+                              setActiveClickCoord({ x: 50, y: 50 });
+                            }}
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition active:scale-95 shrink-0 cursor-pointer"
+                          >
+                            {isKu ? '+ دانان' : 'Pin +'}
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  <div className="pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setIsRackModalOpen(true)}
+                      className="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-slate-800 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isKu ? '+ دروستکردن یان دەستکاری ڕاکەکان' : '+ Manage & Add Racks'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

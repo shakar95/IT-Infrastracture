@@ -396,6 +396,12 @@ export default function RackManagerModal({ isOpen, onClose, devices = [], lang =
                           <Cpu className="w-2.5 h-2.5" />
                           <span>{installedCount} {isKu ? 'ئامێر' : 'devices'}</span>
                         </span>
+                        {rack.floor_plan_id && rack.pos_x !== null && (
+                          <span className="inline-flex items-center gap-0.5 text-emerald-400 font-semibold">
+                            <MapPin className="w-2.5 h-2.5" />
+                            <span>{isKu ? 'پینکراو لەسەر نەخشە' : 'Pinned on Map'}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

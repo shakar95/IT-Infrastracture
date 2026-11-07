@@ -686,7 +686,14 @@ export default function DeviceProvisioning({
                       if (e.target.value === '__manage__') {
                         setIsZoneModalOpen(true);
                       } else {
-                        setDeviceForm({ ...deviceForm, placement_zone: e.target.value });
+                        const newZone = e.target.value;
+                        setDeviceForm({
+                          ...deviceForm,
+                          placement_zone: newZone,
+                          rack_name: newZone === 'rack'
+                            ? (deviceForm.rack_name || racks[0]?.name || 'Main 42U Server Rack A')
+                            : deviceForm.rack_name,
+                        });
                       }
                     }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"

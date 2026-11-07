@@ -14,6 +14,9 @@ export const DEFAULT_RACKS = [
     zone: 'main_villa',
     location: 'Main Server Room (Basement -1)',
     isSystem: true,
+    floor_plan_id: null,
+    pos_x: null,
+    pos_y: null,
   },
   {
     id: 'guest_rack',
@@ -23,6 +26,9 @@ export const DEFAULT_RACKS = [
     zone: 'guest_house',
     location: 'Guest House IT Closet',
     isSystem: true,
+    floor_plan_id: null,
+    pos_x: null,
+    pos_y: null,
   },
   {
     id: 'service_rack',
@@ -32,6 +38,9 @@ export const DEFAULT_RACKS = [
     zone: 'service_area',
     location: 'Service Block Tech Room',
     isSystem: true,
+    floor_plan_id: null,
+    pos_x: null,
+    pos_y: null,
   },
   {
     id: 'gate_cabinet',
@@ -41,6 +50,9 @@ export const DEFAULT_RACKS = [
     zone: 'security_gate',
     location: 'Security Office',
     isSystem: false,
+    floor_plan_id: null,
+    pos_x: null,
+    pos_y: null,
   },
 ];
 
@@ -95,6 +107,9 @@ export function addRack(name, nameKu, totalUnits = 42, zone = 'main_villa', loca
     zone: zone || 'main_villa',
     location: location.trim(),
     isSystem: false,
+    floor_plan_id: null,
+    pos_x: null,
+    pos_y: null,
   };
 
   const updated = [...current, newRack];
@@ -113,12 +128,36 @@ export function updateRack(id, updates = {}) {
         totalUnits: updates.totalUnits !== undefined ? Number(updates.totalUnits) || r.totalUnits : r.totalUnits,
         zone: updates.zone !== undefined ? updates.zone : r.zone,
         location: updates.location !== undefined ? updates.location.trim() : r.location,
+        floor_plan_id: updates.floor_plan_id !== undefined ? updates.floor_plan_id : (r.floor_plan_id || null),
+        pos_x: updates.pos_x !== undefined ? updates.pos_x : (r.pos_x ?? null),
+        pos_y: updates.pos_y !== undefined ? updates.pos_y : (r.pos_y ?? null),
       };
     }
     return r;
   });
   saveStoredRacks(updated);
   return updated;
+}
+
+export function updateRackPosition(id, { floor_plan_id = null, pos_x = null, pos_y = null } = {}) {
+  const current = getStoredRacks();
+  const updated = current.map((r) => {
+    if (r.id === id) {
+      return {
+        ...r,
+        floor_plan_id: floor_plan_id || null,
+        pos_x: pos_x !== null && pos_x !== undefined ? Number(pos_x) : null,
+        pos_y: pos_y !== null && pos_y !== undefined ? Number(pos_y) : null,
+      };
+    }
+    return r;
+  });
+  saveStoredRacks(updated);
+  return updated;
+}
+
+export function unpinRack(id) {
+  return updateRackPosition(id, { floor_plan_id: null, pos_x: null, pos_y: null });
 }
 
 export function deleteRack(id) {
@@ -175,6 +214,8 @@ export function useRacks() {
     addRack,
     updateRack,
     deleteRack,
+    updateRackPosition,
+    unpinRack,
     formatRack: (id, lang) => formatRack(id, lang),
   };
 }
