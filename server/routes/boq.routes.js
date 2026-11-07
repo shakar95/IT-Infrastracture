@@ -390,17 +390,6 @@ router.post('/batch', async (req, res) => {
       },
       version: createdVersion,
     });
-      report: {
-        total_processed: items.length,
-        added_count: added.length,
-        updated_count: updated.length,
-        skipped_count: skipped.length,
-        added,
-        updated,
-        skipped,
-      },
-      version: createdVersion,
-    });
   } catch (err) {
     console.error('Error in smart BOQ batch import:', err);
     res.status(500).json({ error: err.message });
