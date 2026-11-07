@@ -77,7 +77,7 @@ router.post('/', async (req, res) => {
       description: description || '',
       total_qty: Number(total_qty) || 1,
       unit_cost: Number(unit_cost) || 0,
-      product_image_url: product_image_url || 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600',
+      product_image_url: product_image_url || '/default-ict-device.svg',
       manual_pdf_url: manual_pdf_url || null,
       allowed_zones: Array.isArray(allowed_zones) ? allowed_zones : ['indoor'],
       is_rack_mounted: Boolean(is_rack_mounted),
@@ -119,12 +119,26 @@ router.post('/batch', async (req, res) => {
       return res.status(400).json({ error: 'No items provided for batch import' });
     }
 
-    const defaultImg = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+    const defaultImg = '/default-ict-device.svg';
 
-    // Current models belonging to this project
-    const currentProjectModels = mockBoqModels.filter(
-      (m) => (m.project_id || 'proj-sitak') === project_id
-    );
+    // Current models belonging to this project from Supabase or memory
+    let currentProjectModels = [];
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbData, error: dbErr } = await supabase.from('boq_models').select('*, categories(*)');
+        if (!dbErr && dbData) {
+          currentProjectModels = dbData.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+        }
+      } catch (err) {
+        console.warn('Failed to load Supabase models for batch import:', err.message);
+      }
+    }
+
+    if (currentProjectModels.length === 0) {
+      currentProjectModels = mockBoqModels.filter(
+        (m) => (m.project_id || 'proj-sitak') === project_id
+      );
+    }
 
     const added = [];
     const updated = [];
@@ -140,8 +154,8 @@ router.post('/batch', async (req, res) => {
       // Find existing model strictly in THIS project
       const existing = currentProjectModels.find(
         (m) =>
-          m.model.trim().toLowerCase() === normModel ||
-          (m.brand.trim().toLowerCase() === normBrand && m.model.trim().toLowerCase() === normModel)
+          (m.model && m.model.trim().toLowerCase() === normModel) ||
+          (m.brand && m.brand.trim().toLowerCase() === normBrand && m.model && m.model.trim().toLowerCase() === normModel)
       );
 
       const targetQty = Math.max(1, Number(rawItem.total_qty) || 1);
@@ -156,7 +170,7 @@ router.post('/batch', async (req, res) => {
       const targetImg = rawItem.product_image_url || defaultImg;
 
       if (!existing) {
-        // Case 1: Model does NOT exist -> ADD
+        // Case 1: Model does NOT exist in this site -> ADD / INSERT
         const newModel = {
           id: `boq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           project_id,
@@ -176,6 +190,33 @@ router.post('/batch', async (req, res) => {
           updated_at: new Date().toISOString(),
         };
 
+        if (isSupabaseConfigured) {
+          try {
+            let { data: inserted, error: insertErr } = await supabase
+              .from('boq_models')
+              .insert([newModel])
+              .select('*, categories(*)')
+              .single();
+
+            if (insertErr && (insertErr.message?.includes('project_id') || insertErr.code === 'PGRST204')) {
+              const { project_id: _, ...payloadWithoutProj } = newModel;
+              const retry = await supabase
+                .from('boq_models')
+                .insert([payloadWithoutProj])
+                .select('*, categories(*)')
+                .single();
+              inserted = retry.data;
+            }
+
+            if (inserted) {
+              newModel.id = inserted.id;
+              newModel.categories = inserted.categories;
+            }
+          } catch (err) {
+            console.warn('Supabase batch insert error:', err.message);
+          }
+        }
+
         mockBoqModels.push(newModel);
         currentProjectModels.push(newModel);
         added.push(newModel);
@@ -186,7 +227,7 @@ router.post('/batch', async (req, res) => {
           details: `Added new model (Qty: ${targetQty}, Cost: $${targetUnitCost})`,
         });
       } else {
-        // Case 2: Model exists -> Compare fields
+        // Case 2: Model already exists in this site -> Compare fields & UPDATE in place
         const diffs = [];
         if (Number(existing.total_qty) !== targetQty) {
           diffs.push({ field: 'total_qty', label: 'Qty', oldVal: existing.total_qty, newVal: targetQty });
@@ -208,10 +249,8 @@ router.post('/batch', async (req, res) => {
         }
 
         if (diffs.length > 0) {
-          // Fields differ -> UPDATE
-          const idx = mockBoqModels.findIndex((m) => m.id === existing.id);
-          const updatedModel = {
-            ...existing,
+          // Fields differ -> UPDATE existing record
+          const updatePayload = {
             description: targetDesc || existing.description,
             total_qty: targetQty,
             unit_cost: targetUnitCost,
@@ -219,13 +258,35 @@ router.post('/batch', async (req, res) => {
             allowed_zones: targetZone,
             is_rack_mounted: targetIsRack,
             rack_unit_size: targetRackSize,
-            product_image_url: rawItem.product_image_url || existing.product_image_url,
+            product_image_url: rawItem.product_image_url || existing.product_image_url || defaultImg,
             updated_at: new Date().toISOString(),
+          };
+
+          if (isSupabaseConfigured && existing.id) {
+            try {
+              await supabase
+                .from('boq_models')
+                .update(updatePayload)
+                .eq('id', existing.id);
+            } catch (err) {
+              console.warn('Supabase batch update error:', err.message);
+            }
+          }
+
+          const idx = mockBoqModels.findIndex((m) => m.id === existing.id);
+          const updatedModel = {
+            ...existing,
+            ...updatePayload,
           };
 
           if (idx !== -1) {
             mockBoqModels[idx] = updatedModel;
           }
+          const currIdx = currentProjectModels.findIndex((m) => m.id === existing.id);
+          if (currIdx !== -1) {
+            currentProjectModels[currIdx] = updatedModel;
+          }
+
           updated.push({
             ...updatedModel,
             diffs,
@@ -238,7 +299,7 @@ router.post('/batch', async (req, res) => {
             details: diffs.map((d) => `${d.label}: ${d.oldVal} ➔ ${d.newVal}`).join(', '),
           });
         } else {
-          // No changes -> SKIP (no duplicate)
+          // No changes -> SKIP (no duplicate created)
           skipped.push(existing);
         }
       }
@@ -275,7 +336,24 @@ router.post('/batch', async (req, res) => {
       mockBoqVersions.unshift(createdVersion);
     }
 
-    const finalModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+    let finalModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbModels } = await supabase.from('boq_models').select('*, categories(*)');
+        if (dbModels && dbModels.length > 0) {
+          const { data: devices } = await supabase.from('devices').select('id, boq_model_id');
+          finalModels = dbModels
+            .filter((m) => (m.project_id || 'proj-sitak') === project_id)
+            .map((m) => ({
+              ...m,
+              provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
+            }));
+        }
+      } catch (err) {
+        console.warn('Error fetching fresh Supabase models after batch import:', err.message);
+      }
+    }
+
     return res.status(201).json({
       success: true,
       models: finalModels,

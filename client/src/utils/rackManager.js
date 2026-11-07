@@ -178,3 +178,4 @@ export function useRacks() {
     formatRack: (id, lang) => formatRack(id, lang),
   };
 }
+

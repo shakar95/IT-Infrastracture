@@ -31,6 +31,7 @@ import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
 import { useRacks } from '../utils/rackManager';
+import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -349,18 +350,17 @@ export default function DeviceProvisioning({
                       className="px-4 py-3 whitespace-nowrap cursor-pointer hover:bg-slate-800/40 transition group/model rounded-lg"
                     >
                       <div className="flex items-center gap-2.5">
-                        {model?.product_image_url && (
-                          <div className="relative flex-shrink-0 rounded-lg overflow-hidden border border-slate-700 bg-slate-950 group-hover/model:ring-2 group-hover/model:ring-blue-500 transition shadow-sm">
-                            <img
-                              src={model.product_image_url}
-                              alt=""
-                              className="w-9 h-9 object-cover group-hover/model:scale-110 transition duration-300"
-                            />
-                            <div className="absolute inset-0 bg-blue-600/30 opacity-0 group-hover/model:opacity-100 flex items-center justify-center transition">
-                              <Maximize2 className="w-3.5 h-3.5 text-white drop-shadow" />
-                            </div>
+                        <div className="relative flex-shrink-0 rounded-lg overflow-hidden border border-slate-700 bg-slate-950 group-hover/model:ring-2 group-hover/model:ring-blue-500 transition shadow-sm">
+                          <img
+                            src={getEffectiveProductImage(model?.product_image_url)}
+                            alt=""
+                            onError={(e) => { e.currentTarget.src = DEFAULT_ICT_IMAGE; }}
+                            className="w-9 h-9 object-cover group-hover/model:scale-110 transition duration-300"
+                          />
+                          <div className="absolute inset-0 bg-blue-600/30 opacity-0 group-hover/model:opacity-100 flex items-center justify-center transition">
+                            <Maximize2 className="w-3.5 h-3.5 text-white drop-shadow" />
                           </div>
-                        )}
+                        </div>
                         <div>
                           <div className="font-semibold text-slate-200 group-hover/model:text-blue-300 transition">
                             {model ? `${model.brand} ${model.model}` : 'Generic Device'}

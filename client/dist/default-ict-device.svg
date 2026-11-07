@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0f1d"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="cyanBlueGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1" opacity="0.6"/>
+      <circle cx="40" cy="40" r="1.5" fill="#38bdf8" opacity="0.25"/>
+    </pattern>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="600" fill="url(#bgGrad)"/>
+  <rect width="800" height="600" fill="url(#grid)"/>
+
+  <!-- Circuit Trace Lines -->
+  <path d="M 50 120 L 250 120 L 320 190 L 750 190" fill="none" stroke="#1e293b" stroke-width="2"/>
+  <path d="M 50 480 L 480 480 L 550 410 L 750 410" fill="none" stroke="#1e293b" stroke-width="2"/>
+  <circle cx="320" cy="190" r="4" fill="#38bdf8" opacity="0.6"/>
+  <circle cx="550" cy="410" r="4" fill="#6366f1" opacity="0.6"/>
+
+  <!-- Center Card Frame -->
+  <rect x="180" y="110" width="440" height="380" rx="24" fill="#0b1329" stroke="#1e3a8a" stroke-width="2" opacity="0.95"/>
+  <rect x="180" y="110" width="440" height="380" rx="24" fill="none" stroke="url(#cyanBlueGrad)" stroke-width="1.5" opacity="0.6"/>
+
+  <!-- Inner Chip Panel -->
+  <rect x="220" y="150" width="360" height="300" rx="16" fill="#030712" stroke="#1e293b" stroke-width="1.5"/>
+
+  <!-- Microchip Connector Pins -->
+  <path d="M 205 200 H 220 M 205 240 H 220 M 205 280 H 220 M 205 320 H 220 M 205 360 H 220 M 205 400 H 220" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 580 200 H 595 M 580 240 H 595 M 580 280 H 595 M 580 320 H 595 M 580 360 H 595 M 580 400 H 595" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Server/Network Microchip Vector Icon -->
+  <g transform="translate(368, 185)">
+    <rect x="0" y="0" width="64" height="64" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+    <path d="M 16 32 H 48 M 32 16 V 48" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="32" cy="32" r="6" fill="#38bdf8" filter="url(#glow)"/>
+    <circle cx="16" cy="32" r="3" fill="#60a5fa"/>
+    <circle cx="48" cy="32" r="3" fill="#60a5fa"/>
+    <circle cx="32" cy="16" r="3" fill="#60a5fa"/>
+    <circle cx="32" cy="48" r="3" fill="#60a5fa"/>
+  </g>
+
+  <!-- Big Bold ICT Typography -->
+  <text x="400" y="335" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="82" font-weight="900" fill="url(#cyanBlueGrad)" text-anchor="middle" letter-spacing="8" filter="url(#glow)">ICT</text>
+
+  <!-- Subtitle Tagline -->
+  <text x="400" y="375" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="4">INFRASTRUCTURE HARDWARE</text>
+
+  <!-- Status / Specification Pill -->
+  <rect x="290" y="405" width="220" height="26" rx="13" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <circle cx="312" cy="418" r="4" fill="#10b981"/>
+  <text x="412" y="422" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="700" fill="#cbd5e1" text-anchor="middle" letter-spacing="2">DEFAULT ASSET IMAGE</text>
+</svg>

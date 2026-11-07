@@ -32,6 +32,7 @@ import ExcelBoqImportModal from './ExcelBoqImportModal';
 import BoqVersionsSidebar from './BoqVersionsSidebar';
 import BoqVersionDiffModal from './BoqVersionDiffModal';
 import { downloadBoqExcelTemplate } from '../utils/excelBoqUtils';
+import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
 
 const compressImage = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
   return new Promise((resolve, reject) => {
@@ -132,7 +133,7 @@ export default function BOQManager({
     description: '',
     total_qty: 1,
     unit_cost: 0,
-    product_image_url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
+    product_image_url: DEFAULT_ICT_IMAGE,
     manual_pdf_url: '',
     allowed_zones: ['indoor'],
     is_rack_mounted: false,
@@ -440,8 +441,9 @@ export default function BOQManager({
               {/* Product Image & Badges */}
               <div className="relative h-44 bg-slate-950 overflow-hidden">
                 <img
-                  src={m.product_image_url}
+                  src={getEffectiveProductImage(m.product_image_url)}
                   alt={`${m.brand} ${m.model}`}
+                  onError={(e) => { e.currentTarget.src = DEFAULT_ICT_IMAGE; }}
                   className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
@@ -634,11 +636,11 @@ export default function BOQManager({
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={m.product_image_url}
+                            src={getEffectiveProductImage(m.product_image_url)}
                             alt={m.model}
                             className="w-12 h-12 object-cover rounded-xl border border-slate-800 bg-slate-950 group-hover:border-blue-500/50 transition shrink-0"
                             onError={(e) => {
-                              e.target.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600';
+                              e.currentTarget.src = DEFAULT_ICT_IMAGE;
                             }}
                           />
                           <div>

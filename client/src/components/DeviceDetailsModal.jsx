@@ -21,6 +21,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
+import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
 
 export default function DeviceDetailsModal({
   device,
@@ -154,18 +155,12 @@ export default function DeviceDetailsModal({
               {/* Product Photo Showcase with Zoom Trigger */}
               <div className="md:col-span-5 space-y-2">
                 <div className="relative group rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 aspect-[4/3] shadow-inner flex items-center justify-center">
-                  {model?.product_image_url ? (
-                    <img
-                      src={model.product_image_url}
-                      alt={`${model.brand} ${model.model}`}
-                      className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="text-center p-6 text-slate-500">
-                      <Layers className="w-12 h-12 mx-auto mb-2 opacity-40" />
-                      <p className="text-xs">No Hardware Photo Available</p>
-                    </div>
-                  )}
+                  <img
+                    src={getEffectiveProductImage(model?.product_image_url)}
+                    alt={`${model?.brand || 'Hardware'} ${model?.model || ''}`}
+                    onError={(e) => { e.currentTarget.src = DEFAULT_ICT_IMAGE; }}
+                    className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                  />
 
                   {/* Gradient Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />

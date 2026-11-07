@@ -1,118 +1,167 @@
 import * as XLSX from 'xlsx';
+import { DEFAULT_ICT_IMAGE } from './defaultIctImage';
 
-// Category-specific high-resolution default hardware images
-export const DEFAULT_CATEGORY_IMAGES = {
-  // Wi-Fi / AP
-  'wireless access points & wi-fi': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-  'نۆدی وایفای و پەیوەندی بێتەل': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-  'wifi': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-  'ap': 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
+export { DEFAULT_ICT_IMAGE };
 
-  // CCTV / Surveillance
-  'cctv & surveillance system': 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=600',
-  'سیستەمی کامێرای چاودێری': 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=600',
-  'cctv': 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=600',
-  'camera': 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=600',
+/**
+ * Intelligent AI / Semantic Categorizer for ELV & ICT Systems
+ * Analyzes item description, manufacturer brand, and model to deduce the exact category
+ */
+export function autoClassifyCategory(description = '', brand = '', model = '', existingCategories = []) {
+  if (!existingCategories || existingCategories.length === 0) return null;
 
-  // Server Racks & Switches
-  'server racks & structured cabling': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600',
-  'ڕاکەکانی سێرڤەر و کێبڵی پێکهاتەیی': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600',
-  'rack': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600',
-  'switch': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600',
+  const text = `${description} ${brand} ${model}`.toLowerCase();
 
-  // Automation & Control (Crestron / Smart Home)
-  'automation & av control': 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600',
-  'ئۆتۆمەیشن و کۆنترۆڵی زیرەک': 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600',
-  'automation': 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600',
-  'crestron': 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600',
+  // Domain definitions with weighted matching keywords
+  const rules = [
+    {
+      categoryKey: 'wireless access points & wi-fi',
+      altKeys: ['wifi', 'wi-fi', 'access point', 'ap', 'وایفای', 'بێتەل'],
+      keywords: [
+        'wifi', 'wi-fi', 'access point', ' ap ', 'ap-', 'wlan', 'unifi', 'u7', 'u6',
+        'u7-pro', 'u6-pro', 'u6-mesh', 'u6-plus', 'tri-band', 'dual-band', 'ssid',
+        '802.11', 'wireless', 'poe access point', 'aruba ap', 'ruckus', 'eap',
+      ],
+    },
+    {
+      categoryKey: 'cctv & surveillance system',
+      altKeys: ['cctv', 'surveillance', 'camera', 'کامێرای چاودێری', 'کامێرا'],
+      keywords: [
+        'camera', 'cctv', 'surveillance', 'dome', 'bullet', 'ptz', 'turret', 'nvr',
+        'dvr', 'hikvision', 'dahua', 'axis', 'hanwha', 'uniview', 'megapixel', ' 4mp',
+        ' 8mp', '4k camera', 'ir night', 'varifocal', 'wdr', 'fisheye', 'video recorder',
+      ],
+    },
+    {
+      categoryKey: 'server racks & structured cabling',
+      altKeys: ['rack', 'switch', 'cabling', 'ڕاک', 'سێرڤەر', 'سوویچ'],
+      keywords: [
+        'switch', 'poe switch', 'rack', 'cabinet', 'patch panel', 'keystone', 'cat6',
+        'cat6a', 'cat7', 'fiber', 'fiber optic', 'sfp', 'sfp+', 'pdu', 'router',
+        'gateway', 'firewall', 'fortigate', 'server', 'mdf', 'idf', 'ethernet cable',
+        'rj45', '48-port', '24-port', 'core switch',
+      ],
+    },
+    {
+      categoryKey: 'automation & av control',
+      altKeys: ['automation', 'crestron', 'control', 'ئۆتۆمەیشن', 'کۆنترۆڵی زیرەک'],
+      keywords: [
+        'automation', 'crestron', 'control4', 'knx', 'smart home', 'processor',
+        'controller', 'touchscreen', 'touch panel', 'ts-770', 'ts-1070', 'cp4', 'cp4n',
+        'din-ap4', 'lutron', 'lighting control', 'dimmer', 'relay', 'dm-nvx', 'keypad',
+      ],
+    },
+    {
+      categoryKey: 'iptv headend & distribution',
+      altKeys: ['iptv', 'televes', 'headend', 'تەلەفزیۆن', 'سەنتەری iptv'],
+      keywords: [
+        'iptv', 'headend', 'televes', 'avant', 'modulator', 'transcoder', 'multiswitch',
+        'amplifier', 'coaxial', 'splitter', 'dvb', 'satellite', 'dish', 'lbf',
+        'rf distribution', 'terrestrial',
+      ],
+    },
+    {
+      categoryKey: 'speakers & sound systems',
+      altKeys: ['speaker', 'audio', 'sound', 'بڵندگۆ', 'دەنگ'],
+      keywords: [
+        'speaker', 'sound', 'audio', 'amplifier', 'subwoofer', 'ceiling speaker',
+        'in-wall', 'sonance', 'sonos', 'bose', 'kef', 'bowers', 'wilkins', 'b&w',
+        'soundbar', 'matrix amp', 'multi-room audio', 'dsp', 'power amp', 'qsc',
+      ],
+    },
+    {
+      categoryKey: 'intercom & video door stations',
+      altKeys: ['intercom', 'door station', 'doorbell', 'ئینتەرکۆم', 'دەروازە'],
+      keywords: [
+        'intercom', 'door station', 'doorbell', 'door phone', 'akuvox', 'entry panel',
+        'video intercom', 'indoor monitor', 'access control', 'card reader', 'rfid',
+        'door strike', 'magnetic lock',
+      ],
+    },
+    {
+      categoryKey: 'tv & commercial displays',
+      altKeys: ['tv', 'display', 'screen', 'شاشە', 'تەلەفزیۆن'],
+      keywords: [
+        'tv', 'display', 'television', 'oled', 'qled', 'commercial display', 'signage',
+        'screen', 'monitor', 'bracket', 'wall mount', 'video wall',
+      ],
+    },
+    {
+      categoryKey: 'projectors & projection screens',
+      altKeys: ['projector', 'cinema', 'سینەما', 'پەردەی سینەما'],
+      keywords: [
+        'projector', 'projection screen', 'epson', 'laser projector', 'lumens',
+        'home cinema', 'motorized screen', 'alr screen',
+      ],
+    },
+    {
+      categoryKey: 'intrusion detection & perimeter alarm',
+      altKeys: ['alarm', 'intrusion', 'هۆشداری', 'زەنگی دژەبڕین'],
+      keywords: [
+        'alarm', 'intrusion', 'motion detector', 'pir', 'siren', 'perimeter',
+        'beam detector', 'door contact', 'glass break', 'ajax',
+      ],
+    },
+    {
+      categoryKey: 'ip telephony & pbx',
+      altKeys: ['telephone', 'phone', 'voip', 'pbx', 'تەلەفۆن'],
+      keywords: [
+        'phone', 'ip phone', 'voip', 'pbx', 'sip', 'yealink', 'grandstream',
+        'desk phone', 'telephony', 'conference phone',
+      ],
+    },
+  ];
 
-  // IPTV Headend & Distribution
-  'iptv headend & distribution': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600',
-  'سەنتەری iptv سەرەکی': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600',
-  'iptv': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600',
-  'televes': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600',
+  let bestCategory = null;
+  let highestScore = 0;
 
-  // Speakers & Audio
-  'speakers & sound systems': 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600',
-  'بڵندگۆ و سیستەمی دەنگ': 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600',
-  'audio': 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600',
-  'speakers': 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600',
+  for (const rule of rules) {
+    let score = 0;
+    for (const kw of rule.keywords) {
+      if (text.includes(kw)) {
+        score += kw.length > 5 ? 3 : 1;
+      }
+    }
 
-  // Intercom & Video Door Stations
-  'intercom & video door stations': 'https://images.unsplash.com/photo-1558002038-1055907df827?w=600',
-  'ئینتەرکۆم و زەنگی بینراو': 'https://images.unsplash.com/photo-1558002038-1055907df827?w=600',
-  'intercom': 'https://images.unsplash.com/photo-1558002038-1055907df827?w=600',
+    if (score > highestScore) {
+      const targetCat = existingCategories.find((c) => {
+        const nameNorm = c.name.toLowerCase();
+        const kuNorm = (c.name_ku || '').toLowerCase();
+        return (
+          nameNorm.includes(rule.categoryKey) ||
+          rule.categoryKey.includes(nameNorm) ||
+          rule.altKeys.some((ak) => nameNorm.includes(ak) || kuNorm.includes(ak))
+        );
+      });
 
-  // TV & Commercial Displays
-  'tv & commercial displays': 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=600',
-  'تەلەفزیۆن و شاشەکان': 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=600',
-  'tv': 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=600',
-  'display': 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=600',
-
-  // Projectors & Home Cinema
-  'projectors & projection screens': 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=600',
-  'پرۆجێکتەر و پەردەی سینەما': 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=600',
-  'home cinema & reference audio': 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600',
-  'سینەمای ماڵەوە و دەنگی های-ئێند': 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600',
-
-  // Intrusion & Alarm
-  'intrusion detection & perimeter alarm': 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=600',
-  'سیستەمی هۆشداری و زەنگی دژەبڕین': 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=600',
-  'alarm': 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=600',
-
-  // IP Telephony & PBX
-  'ip telephony & pbx': 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?w=600',
-  'تەلەفۆن و پەیوەندی ناوخۆیی': 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?w=600',
-
-  // Default Fallback
-  default: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600',
-};
-
-// Helper to find default image based on category name or brand
-export function getDefaultDeviceImage(categoryName = '', brand = '') {
-  const normCat = (categoryName || '').toLowerCase().trim();
-  const normBrand = (brand || '').toLowerCase().trim();
-
-  // Check exact category matches
-  for (const [key, url] of Object.entries(DEFAULT_CATEGORY_IMAGES)) {
-    if (normCat.includes(key) || key.includes(normCat)) {
-      return url;
+      if (targetCat) {
+        highestScore = score;
+        bestCategory = targetCat;
+      }
     }
   }
 
-  // Check brand keywords
-  if (normBrand.includes('ubiquiti') || normBrand.includes('unifi')) {
-    return DEFAULT_CATEGORY_IMAGES['wireless access points & wi-fi'];
-  }
-  if (normBrand.includes('crestron')) {
-    return DEFAULT_CATEGORY_IMAGES['automation & av control'];
-  }
-  if (normBrand.includes('televes')) {
-    return DEFAULT_CATEGORY_IMAGES['iptv headend & distribution'];
-  }
-  if (normBrand.includes('axis') || normBrand.includes('hikvision') || normBrand.includes('dahua')) {
-    return DEFAULT_CATEGORY_IMAGES['cctv & surveillance system'];
-  }
-  if (normBrand.includes('cisco') || normBrand.includes('aruba') || normBrand.includes('dell')) {
-    return DEFAULT_CATEGORY_IMAGES['server racks & structured cabling'];
-  }
-  if (normBrand.includes('sonos') || normBrand.includes('bose') || normBrand.includes('kef')) {
-    return DEFAULT_CATEGORY_IMAGES['speakers & sound systems'];
-  }
+  return bestCategory || existingCategories[0] || null;
+}
 
-  return DEFAULT_CATEGORY_IMAGES.default;
+/**
+ * Returns default ICT badge image for BOQ devices
+ */
+export function getDefaultDeviceImage(categoryName = '', brand = '') {
+  // Always return the standard ICT placeholder image as requested
+  return DEFAULT_ICT_IMAGE;
 }
 
 /**
  * Generates and downloads a clean, professional BOQ Excel Template
+ * Note: Category column is omitted as requested — AI categorizes items from descriptions automatically!
  */
 export function downloadBoqExcelTemplate(categories = []) {
-  // Sample demonstration rows
+  // Sample demonstration rows (without Category column!)
   const sampleData = [
     {
       Brand: 'Ubiquiti',
       Model: 'U7-Pro',
-      Category: 'Wireless Access Points & Wi-Fi',
       Description: 'Tri-Band Wi-Fi 7 Ceiling Access Point with 2.5GbE PoE uplink',
       Total_Qty: 14,
       Unit_Cost: 189.0,
@@ -124,7 +173,6 @@ export function downloadBoqExcelTemplate(categories = []) {
     {
       Brand: 'Crestron',
       Model: 'CP4N',
-      Category: 'Automation & AV Control',
       Description: '4-Series Automation Control System with dedicated isolated Control Subnet',
       Total_Qty: 1,
       Unit_Cost: 2450.0,
@@ -136,7 +184,6 @@ export function downloadBoqExcelTemplate(categories = []) {
     {
       Brand: 'Televes',
       Model: 'Avant X Pro',
-      Category: 'IPTV Headend & Distribution',
       Description: 'Multi-band programmable terrestrial amplifier with 32 digital filters and auto-gain',
       Total_Qty: 2,
       Unit_Cost: 480.0,
@@ -148,7 +195,6 @@ export function downloadBoqExcelTemplate(categories = []) {
     {
       Brand: 'Axis',
       Model: 'P3245-LVE',
-      Category: 'CCTV & Surveillance System',
       Description: 'Outdoor vandal-resistant HDTV 1080p fixed dome camera with Forensic WDR',
       Total_Qty: 18,
       Unit_Cost: 420.0,
@@ -160,7 +206,6 @@ export function downloadBoqExcelTemplate(categories = []) {
     {
       Brand: 'Sonos',
       Model: 'Amp',
-      Category: 'Speakers & Sound Systems',
       Description: 'High-fidelity audio amplifier 125W/channel powering architectural multi-room speakers',
       Total_Qty: 6,
       Unit_Cost: 699.0,
@@ -169,16 +214,26 @@ export function downloadBoqExcelTemplate(categories = []) {
       Rack_Unit_Size: 0,
       Product_Image_URL: '',
     },
+    {
+      Brand: 'Fortinet',
+      Model: 'FortiGate-100F',
+      Description: 'Enterprise Security Firewall & Core Gateway with redundant power supply',
+      Total_Qty: 1,
+      Unit_Cost: 3100.0,
+      Placement_Zone: 'rack',
+      Is_Rack_Mounted: 'Yes',
+      Rack_Unit_Size: 1,
+      Product_Image_URL: '',
+    },
   ];
 
   const wb = XLSX.utils.book_new();
 
-  // Sheet 1: BOQ Items
+  // Sheet 1: BOQ Items (No Category Column needed!)
   const wsItems = XLSX.utils.json_to_sheet(sampleData, {
     header: [
       'Brand',
       'Model',
-      'Category',
       'Description',
       'Total_Qty',
       'Unit_Cost',
@@ -193,8 +248,7 @@ export function downloadBoqExcelTemplate(categories = []) {
   wsItems['!cols'] = [
     { wch: 16 }, // Brand
     { wch: 18 }, // Model
-    { wch: 32 }, // Category
-    { wch: 45 }, // Description
+    { wch: 55 }, // Description
     { wch: 12 }, // Total_Qty
     { wch: 12 }, // Unit_Cost
     { wch: 16 }, // Placement_Zone
@@ -205,28 +259,53 @@ export function downloadBoqExcelTemplate(categories = []) {
 
   XLSX.utils.book_append_sheet(wb, wsItems, 'BOQ_Items');
 
-  // Sheet 2: Guidelines & Available Categories
-  const categoryRows = (categories.length > 0 ? categories : [
-    { name: 'Wireless Access Points & Wi-Fi', name_ku: 'نۆدی وایفای و پەیوەندی بێتەل' },
-    { name: 'CCTV & Surveillance System', name_ku: 'سیستەمی کامێرای چاودێری' },
-    { name: 'Automation & AV Control', name_ku: 'ئۆتۆمەیشن و کۆنترۆڵی زیرەک' },
-    { name: 'Server Racks & Structured Cabling', name_ku: 'ڕاکەکانی سێرڤەر و کێبڵی پێکهاتەیی' },
-    { name: 'IPTV Headend & Distribution', name_ku: 'سەنتەری IPTV سەرەکی' },
-    { name: 'Speakers & Sound Systems', name_ku: 'بڵندگۆ و سیستەمی دەنگ' },
-    { name: 'Intercom & Video Door Stations', name_ku: 'ئینتەرکۆم و زەنگی بینراو' },
-    { name: 'TV & Commercial Displays', name_ku: 'تەلەفزیۆن و شاشەکان' },
-    { name: 'IP Telephony & PBX', name_ku: 'تەلەفۆن و پەیوەندی ناوخۆیی' },
-    { name: 'Intrusion Detection & Perimeter Alarm', name_ku: 'سیستەمی هۆشداری و زەنگی دژەبڕین' },
-    { name: 'Projectors & Projection Screens', name_ku: 'پرۆجێکتەر و پەردەی سینەما' },
-  ]).map((c) => ({
-    'Category Name (English)': c.name,
-    'ناوی بەش (Kurdish)': c.name_ku || '',
-    'Allowed Placement Zones': 'indoor, outdoor, rack, safe_room',
-  }));
+  // Sheet 2: Guidelines & AI Categorization Note
+  const guidelineRows = [
+    {
+      'Field': 'Brand',
+      'Description': 'Equipment manufacturer brand name (e.g. Ubiquiti, Axis, Crestron, Televes)',
+      'Required': 'Yes',
+    },
+    {
+      'Field': 'Model',
+      'Description': 'Hardware model number or item code (e.g. U7-Pro, P3245-LVE, CP4N)',
+      'Required': 'Yes',
+    },
+    {
+      'Field': 'Description',
+      'Description': 'Detailed item description. Antigravity AI uses this description to automatically detect and assign the exact ELV category (Wi-Fi, CCTV, Racks, Sound, etc.)!',
+      'Required': 'Recommended',
+    },
+    {
+      'Field': 'Total_Qty',
+      'Description': 'Total bill-of-quantities count for this site',
+      'Required': 'Yes',
+    },
+    {
+      'Field': 'Unit_Cost',
+      'Description': 'Hardware unit price in USD ($)',
+      'Required': 'Optional',
+    },
+    {
+      'Field': 'Placement_Zone',
+      'Description': 'indoor, outdoor, rack, safe_room',
+      'Required': 'Optional',
+    },
+    {
+      'Field': 'Is_Rack_Mounted',
+      'Description': 'Yes or No',
+      'Required': 'Optional',
+    },
+    {
+      'Field': 'Rack_Unit_Size',
+      'Description': 'Number of rack units occupied (e.g. 1, 2, 4)',
+      'Required': 'Optional',
+    },
+  ];
 
-  const wsGuide = XLSX.utils.json_to_sheet(categoryRows);
-  wsGuide['!cols'] = [{ wch: 36 }, { wch: 36 }, { wch: 36 }];
-  XLSX.utils.book_append_sheet(wb, wsGuide, 'Categories_Reference');
+  const wsGuide = XLSX.utils.json_to_sheet(guidelineRows);
+  wsGuide['!cols'] = [{ wch: 22 }, { wch: 70 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, wsGuide, 'Template_Guide');
 
   // Trigger browser download
   XLSX.writeFile(wb, 'BOQ_Template_Sitak_Villa.xlsx');
@@ -234,6 +313,7 @@ export function downloadBoqExcelTemplate(categories = []) {
 
 /**
  * Parses an uploaded Excel file (.xlsx, .xls, .csv) into validated BOQ models
+ * Intelligently classifies categories from item descriptions and sets default ICT image
  */
 export async function parseBoqExcelFile(file, existingCategories = []) {
   return new Promise((resolve, reject) => {
@@ -283,7 +363,8 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
           const unitCost = parseFloat(normalized.unitcost || normalized.cost || normalized.price || 0) || 0;
 
           const zoneStr = String(normalized.placementzone || normalized.zone || 'indoor').toLowerCase().trim();
-          const isRack = String(normalized.israckmounted || normalized.rackmounted || normalized.rack || '').toLowerCase().includes('y') ||
+          const isRack =
+            String(normalized.israckmounted || normalized.rackmounted || normalized.rack || '').toLowerCase().includes('y') ||
             String(normalized.israckmounted || normalized.rackmounted || normalized.rack || '') === '1' ||
             String(normalized.israckmounted || normalized.rackmounted || normalized.rack || '') === 'true';
 
@@ -291,26 +372,25 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
 
           let imageUrl = String(normalized.productimageurl || normalized.imageurl || normalized.image || '').trim();
           if (!imageUrl) {
-            // Assign category-specific high-resolution default image
-            imageUrl = getDefaultDeviceImage(categoryStr, brand);
+            // Assign standard modern ICT image as requested
+            imageUrl = DEFAULT_ICT_IMAGE;
           }
 
-          // Match category ID
-          let matchedCategory = existingCategories.find(
-            (c) =>
-              c.name.toLowerCase() === categoryStr.toLowerCase() ||
-              (c.name_ku && c.name_ku.toLowerCase() === categoryStr.toLowerCase())
-          );
+          // Category matching:
+          // 1. If Category column existed and has a value, try to match it
+          let matchedCategory = null;
+          if (categoryStr) {
+            matchedCategory = existingCategories.find(
+              (c) =>
+                c.name.toLowerCase() === categoryStr.toLowerCase() ||
+                (c.name_ku && c.name_ku.toLowerCase() === categoryStr.toLowerCase()) ||
+                c.name.toLowerCase().includes(categoryStr.toLowerCase())
+            );
+          }
 
-          if (!matchedCategory && existingCategories.length > 0) {
-            // Fuzzy match or fallback to first category
-            matchedCategory =
-              existingCategories.find(
-                (c) =>
-                  categoryStr &&
-                  (c.name.toLowerCase().includes(categoryStr.toLowerCase()) ||
-                    categoryStr.toLowerCase().includes(c.name.toLowerCase()))
-              ) || existingCategories[0];
+          // 2. If no category provided or not matched, Antigravity AI automatically detects category from description, brand, and model!
+          if (!matchedCategory) {
+            matchedCategory = autoClassifyCategory(description, brand, model, existingCategories);
           }
 
           parsedItems.push({
@@ -318,7 +398,7 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
             brand: brand || 'Generic',
             model: model || `MOD-${index + 1}`,
             category_id: matchedCategory?.id || existingCategories[0]?.id || '',
-            category_name: matchedCategory ? matchedCategory.name : (categoryStr || 'ELV System'),
+            category_name: matchedCategory ? matchedCategory.name : 'ELV System',
             category_name_ku: matchedCategory ? matchedCategory.name_ku : '',
             description,
             total_qty: qty,
@@ -340,4 +420,3 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
     reader.readAsArrayBuffer(file);
   });
 }
-

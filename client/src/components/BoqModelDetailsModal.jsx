@@ -36,6 +36,7 @@ import { api } from '../services/api';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
 import { useRacks } from '../utils/rackManager';
 import RackManagerModal from './RackManagerModal';
+import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
 
 // Helper function to compress and resize image files before saving
 const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -981,30 +982,12 @@ export default function BoqModelDetailsModal({
                 {/* Product Photo Showcase with Direct Upload / Update */}
                 <div className="md:col-span-5 space-y-3">
                   <div className="relative group rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 aspect-[4/3] shadow-inner flex items-center justify-center">
-                    {model.product_image_url ? (
-                      <img
-                        src={model.product_image_url}
-                        alt={`${model.brand} ${model.model}`}
-                        className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="text-center p-6 text-slate-500 flex flex-col items-center">
-                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-40 text-blue-400" />
-                        <p className="text-xs mb-3 text-slate-400">
-                          {isKu ? 'هیچ وێنەیەک بۆ ئەم ئامێرە دانەنراوە' : 'No Hardware Photo Available'}
-                        </p>
-                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/30 transition active:scale-95">
-                          <Upload className="w-4 h-4" />
-                          <span>{isKu ? 'دانانی وێنەی ئامێر' : 'Upload Device Photo'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => handleUploadPhoto(e.target.files?.[0])}
-                          />
-                        </label>
-                      </div>
-                    )}
+                    <img
+                      src={getEffectiveProductImage(model.product_image_url)}
+                      alt={`${model.brand} ${model.model}`}
+                      onError={(e) => { e.currentTarget.src = DEFAULT_ICT_IMAGE; }}
+                      className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                    />
 
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />
 

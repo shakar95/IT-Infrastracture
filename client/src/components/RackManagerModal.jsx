@@ -427,3 +427,4 @@ export default function RackManagerModal({ isOpen, onClose, devices = [], lang =
     </div>
   );
 }
+

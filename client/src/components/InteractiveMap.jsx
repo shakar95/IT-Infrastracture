@@ -343,9 +343,9 @@ export default function InteractiveMap({
     if (!isDragging) return;
     setIsDragging(false);
 
-    // Only open placement if explicitly in placement mode or a device was picked for placement
+    // Open device placement picker if tapped on blueprint and there are unpinned devices or in placement mode
     if (!hasDraggedSignificantlyRef.current) {
-      if (isPlacementMode || deviceToPlace) {
+      if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0) {
         handleBlueprintClick(e);
       } else {
         setSelectedDevice(null);
@@ -408,9 +408,9 @@ export default function InteractiveMap({
       setIsDragging(false);
       pinchInitialDistRef.current = 0;
 
-      // Only open placement if explicitly in placement mode or a device was picked for placement
+      // Open device placement picker on mobile tap if unpinned devices exist or in placement mode
       if (!hasDraggedSignificantlyRef.current && duration < 350) {
-        if (isPlacementMode || deviceToPlace) {
+        if (isPlacementMode || deviceToPlace || unpinnedDevices.length > 0) {
           handleBlueprintClick({
             clientX: touchStartPosRef.current.x,
             clientY: touchStartPosRef.current.y,
@@ -442,8 +442,8 @@ export default function InteractiveMap({
     setActiveClickCoord({ x: clampedX, y: clampedY });
     if (deviceToPlace) {
       setSelectedDeviceToAssign(deviceToPlace);
-    } else if (unpinnedDevices.length > 0) {
-      setSelectedDeviceToAssign(unpinnedDevices[0]);
+    } else {
+      setSelectedDeviceToAssign(null); // Never auto-select or auto-pick! Wait for manual selection
     }
   };
 
@@ -822,9 +822,7 @@ export default function InteractiveMap({
                   setIsPlacementMode(nextState);
                   if (nextState) {
                     setMobileActiveView('canvas');
-                    if (!selectedDeviceToAssign && unpinnedDevices.length > 0) {
-                      setSelectedDeviceToAssign(unpinnedDevices[0]);
-                    }
+                    setSelectedDeviceToAssign(null);
                   } else {
                     setDeviceToPlace(null);
                     setSelectedDeviceToAssign(null);

@@ -286,8 +286,8 @@ export default function ExcelBoqImportModal({
               </span>{' '}
               <span className="text-slate-300">
                 {isKu
-                  ? 'داونلۆدی بکە، پڕی بکەرەوە، پاشان لێرە باری بکە'
-                  : 'Download the formatted template with predefined ELV columns & sample rows'}
+                  ? 'داونلۆدی بکە، پڕی بکەرەوە، پاشان لێرە باری بکە (پێویست بە کاتیگۆری ناکات، AI لە وەسفی ئامێرەکە تێدەگات)'
+                  : 'Download template (No Category column needed — AI classifies equipment automatically)'}
               </span>
             </div>
           </div>
@@ -363,8 +363,8 @@ export default function ExcelBoqImportModal({
               </h4>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
                 {isKu
-                  ? 'پشتیوانی فۆرماتەکانی .xlsx و .xls و .csv دەکات. وێنەی دیفۆڵتی ستاندارد بەخۆڕایی بۆ هەر دیڤایسێک دادەنرێت.'
-                  : 'Supports .xlsx, .xls, and .csv. Category-specific hardware photos are automatically assigned.'}
+                  ? 'پشتیوانی .xlsx و .csv دەکات. وێنەی ICT بۆ هەموو ئامێرەکان دادەنرێت و کاتیگۆری لە وەسفەکان دەناسرێتەوە.'
+                  : 'Supports .xlsx and .csv. Default ICT branding is assigned, and AI automatically categorizes from descriptions.'}
               </p>
               {isParsing && (
                 <div className="mt-4 inline-flex items-center gap-2 text-xs text-blue-400">
