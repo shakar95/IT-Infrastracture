@@ -38,3 +38,4 @@ export function formatShortFloorLevel(level, lang = 'en') {
 
   return isKu ? `قاتی ${num}` : `Floor ${num}`;
 }
+

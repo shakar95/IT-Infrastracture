@@ -136,14 +136,11 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST create individual device (with guardrail validation)
+// POST create individual device
 router.post('/', async (req, res) => {
   try {
     const deviceData = req.body;
-    const { model, floorPlan, allDevices } = await getModelAndFloorPlan(deviceData.boq_model_id, deviceData.floor_plan_id);
-
-    // Run Node.js Smart Placement Guardrails
-    validateDeviceGuardrails(deviceData, model, floorPlan, allDevices);
+    const { model } = await getModelAndFloorPlan(deviceData.boq_model_id, deviceData.floor_plan_id);
 
     const payload = {
       project_id: deviceData.project_id || 'proj-sitak',
@@ -181,17 +178,7 @@ router.post('/', async (req, res) => {
         error = retryResult.error;
       }
 
-      if (error) {
-        if (error.message.includes('Guardrail Error') || error.message.includes('IP Conflict') || error.message.includes('Port Conflict')) {
-          return res.status(422).json({
-            guardrail_violation: true,
-            code: 'PG_TRIGGER_GUARDRAIL',
-            message_en: error.message,
-            message_ku: error.message,
-          });
-        }
-        throw error;
-      }
+      if (error) throw error;
       return res.status(201).json({
         ...data,
         boq_model: data.boq_models ? { ...data.boq_models, category: data.boq_models.categories } : null,
@@ -208,69 +195,63 @@ router.post('/', async (req, res) => {
     mockDevices.push(newDevice);
     res.status(201).json(newDevice);
   } catch (err) {
-    if (err instanceof GuardrailError) {
-      return res.status(422).json({
-        guardrail_violation: true,
-        code: err.code,
-        message_en: err.message_en,
-        message_ku: err.message_ku,
-        details: err.details,
-      });
-    }
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT update individual device (with guardrail validation)
+// PUT update individual device
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
 
-    const { model, floorPlan, allDevices } = await getModelAndFloorPlan(updates.boq_model_id, updates.floor_plan_id);
-    validateDeviceGuardrails({ ...updates, id }, model, floorPlan, allDevices);
-
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase
+      const deviceUpdatePayload = {
+        boq_model_id: updates.boq_model_id,
+        custom_label_id: updates.custom_label_id,
+        serial_number: updates.serial_number,
+        mac_address: updates.mac_address,
+        ip_address: updates.ip_address || null,
+        subnet_mask: updates.subnet_mask,
+        gateway: updates.gateway,
+        vlan_id: Number(updates.vlan_id) || 10,
+        switch_name: updates.switch_name,
+        switch_port: updates.switch_port,
+        rack_name: updates.rack_name,
+        rack_unit: updates.rack_unit,
+        zone: updates.zone !== undefined ? (updates.zone || null) : undefined,
+        placement_zone: updates.placement_zone,
+        floor_plan_id: updates.floor_plan_id || null,
+        pos_x: updates.pos_x ?? null,
+        pos_y: updates.pos_y ?? null,
+        installation_status: updates.installation_status,
+        config_backup_url: updates.config_backup_url,
+        notes: updates.notes,
+        updated_at: new Date().toISOString(),
+      };
+
+      let { data, error } = await supabase
         .from('devices')
-        .update({
-          boq_model_id: updates.boq_model_id,
-          custom_label_id: updates.custom_label_id,
-          serial_number: updates.serial_number,
-          mac_address: updates.mac_address,
-          ip_address: updates.ip_address || null,
-          subnet_mask: updates.subnet_mask,
-          gateway: updates.gateway,
-          vlan_id: Number(updates.vlan_id) || 10,
-          switch_name: updates.switch_name,
-          switch_port: updates.switch_port,
-          rack_name: updates.rack_name,
-          rack_unit: updates.rack_unit,
-          zone: updates.zone !== undefined ? (updates.zone || null) : undefined,
-          placement_zone: updates.placement_zone,
-          floor_plan_id: updates.floor_plan_id || null,
-          pos_x: updates.pos_x ?? null,
-          pos_y: updates.pos_y ?? null,
-          installation_status: updates.installation_status,
-          config_backup_url: updates.config_backup_url,
-          notes: updates.notes,
-          updated_at: new Date().toISOString(),
-        })
+        .update(deviceUpdatePayload)
         .eq('id', id)
         .select('*, boq_models(*, categories(*)), floor_plans(*)')
         .single();
 
-      if (error) {
-        if (error.message.includes('Guardrail Error') || error.message.includes('IP Conflict') || error.message.includes('Port Conflict')) {
-          return res.status(422).json({
-            guardrail_violation: true,
-            code: 'PG_TRIGGER_GUARDRAIL',
-            message_en: error.message,
-            message_ku: error.message,
-          });
-        }
-        throw error;
+      // Graceful fallback if devices table does not yet have 'zone' column
+      if (error && (error.message?.includes('zone') || error.code === 'PGRST204')) {
+        console.warn('Supabase devices missing zone column on update, retrying without zone...');
+        delete deviceUpdatePayload.zone;
+        const retryResult = await supabase
+          .from('devices')
+          .update(deviceUpdatePayload)
+          .eq('id', id)
+          .select('*, boq_models(*, categories(*)), floor_plans(*)')
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
       }
+
+      if (error) throw error;
       return res.json({
         ...data,
         boq_model: data.boq_models ? { ...data.boq_models, category: data.boq_models.categories } : null,
@@ -284,15 +265,6 @@ router.put('/:id', async (req, res) => {
     mockDevices[idx] = { ...mockDevices[idx], ...updates, updated_at: new Date().toISOString() };
     res.json(mockDevices[idx]);
   } catch (err) {
-    if (err instanceof GuardrailError) {
-      return res.status(422).json({
-        guardrail_violation: true,
-        code: err.code,
-        message_en: err.message_en,
-        message_ku: err.message_ku,
-        details: err.details,
-      });
-    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -369,8 +341,6 @@ router.patch('/:id/position', async (req, res) => {
       candidate.notes = notes;
     }
 
-    validateDeviceGuardrails(candidate, model, targetFloorPlan, allDevices);
-
     const updatePayload = {
       floor_plan_id,
       pos_x,
@@ -395,14 +365,6 @@ router.patch('/:id/position', async (req, res) => {
         .select()
         .single();
       if (error) {
-        if (error.message.includes('Guardrail Error') || error.message.includes('Zone mismatch')) {
-          return res.status(422).json({
-            guardrail_violation: true,
-            code: 'PG_ZONE_GUARDRAIL',
-            message_en: error.message,
-            message_ku: error.message,
-          });
-        }
         throw error;
       }
       return res.json({ success: true, device: data });
@@ -419,15 +381,6 @@ router.patch('/:id/position', async (req, res) => {
 
     res.json({ success: true, device });
   } catch (err) {
-    if (err instanceof GuardrailError) {
-      return res.status(422).json({
-        guardrail_violation: true,
-        code: err.code,
-        message_en: err.message_en,
-        message_ku: err.message_ku,
-        details: err.details,
-      });
-    }
     res.status(500).json({ error: err.message });
   }
 });

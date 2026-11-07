@@ -7,7 +7,6 @@ import InteractiveMap from './components/InteractiveMap';
 import AiCameraScanner from './components/AiCameraScanner';
 import AiTroubleshooter from './components/AiTroubleshooter';
 import CategoryBuilder from './components/CategoryBuilder';
-import GuardrailAlert from './components/GuardrailAlert';
 import CreateProjectModal from './components/CreateProjectModal';
 import { api } from './services/api';
 
@@ -23,9 +22,6 @@ export default function App() {
   const [activeProject, setActiveProject] = useState(null);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Guardrail alert state
-  const [guardrailAlert, setGuardrailAlert] = useState(null);
 
   // Selected device for AI Troubleshooter
   const [troubleshootDevice, setTroubleshootDevice] = useState(null);
@@ -112,13 +108,9 @@ export default function App() {
     }
   };
 
-  // Helper to handle guardrail errors
+  // Helper to handle errors
   const catchGuardrail = (err) => {
-    if (err.isGuardrail && err.data) {
-      setGuardrailAlert(err.data);
-    } else {
-      alert(err.message || 'Operation failed');
-    }
+    alert(err.message || 'Operation failed');
   };
 
   // BOQ Actions
@@ -541,13 +533,6 @@ export default function App() {
           </>
         )}
       </main>
-
-      {/* Smart Placement Guardrail Alert Modal */}
-      <GuardrailAlert
-        alert={guardrailAlert}
-        onClose={() => setGuardrailAlert(null)}
-        lang={lang}
-      />
 
       {/* Create Project / Site Modal */}
       <CreateProjectModal

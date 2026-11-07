@@ -3,12 +3,6 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 async function handleResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (json.guardrail_violation) {
-      const err = new Error(json.message_en || 'Guardrail Violation');
-      err.isGuardrail = true;
-      err.data = json;
-      throw err;
-    }
     throw new Error(json.error || json.message || `Request failed with status ${res.status}`);
   }
   return json;

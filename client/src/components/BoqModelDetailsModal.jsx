@@ -1195,8 +1195,8 @@ export default function BoqModelDetailsModal({
                   </div>
                   <p className="text-[11px] text-slate-400">
                     {isKu
-                      ? 'دیاریکردنی ئەو ناوچە و نهۆمانەی کە ئەم ئامێرەی لێ دادەنرێت (سیستەمەکە ڕێگری لە دانانی ئامێر لە دەرەوەی ئەم شوێنانە دەکات):'
-                      : 'Specify the zones and locations where this device is permitted to be installed (Smart Placement Guardrail):'}
+                      ? 'دیاریکردنی ئەو ناوچە و شوێنانەی کە ئەم ئامێرە لەخۆدەگرن بۆ ڕێکخستن و ڕێنمایی:'
+                      : 'Specify the target zones and locations for this equipment:'}
                   </p>
 
                   {/* Standard Predefined Zone Chips */}

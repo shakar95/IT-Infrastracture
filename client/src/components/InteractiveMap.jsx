@@ -317,7 +317,7 @@ export default function InteractiveMap({
     if (!isDragging) return;
     const dx = e.clientX - dragOriginRef.current.x;
     const dy = e.clientY - dragOriginRef.current.y;
-    if (Math.hypot(dx, dy) > 5) {
+    if (Math.hypot(dx, dy) > 8) {
       hasDraggedSignificantlyRef.current = true;
     }
     setPan({
@@ -407,7 +407,7 @@ export default function InteractiveMap({
     }
   };
 
-  // Click anywhere on blueprint to place or open quick placement dialog
+  // Click anywhere on blueprint to open placement dialog (User ALWAYS explicitly chooses/confirms device)
   const handleBlueprintClick = (e) => {
     if (!blueprintGraphicRef.current || !activePlan) return;
 
@@ -418,20 +418,7 @@ export default function InteractiveMap({
     const clampedX = Math.max(1, Math.min(99, Math.round(rawX * 10) / 10));
     const clampedY = Math.max(1, Math.min(99, Math.round(rawY * 10) / 10));
 
-    // Case A: User already picked a device from staging drawer
-    if (deviceToPlace) {
-      onUpdatePosition(deviceToPlace.id, {
-        floor_plan_id: activePlan.id,
-        pos_x: clampedX,
-        pos_y: clampedY,
-      });
-      triggerPlacementFlash(clampedX, clampedY);
-      setSelectedDevice(deviceToPlace);
-      setDeviceToPlace(null);
-      return;
-    }
-
-    // Case B: Click-to-place popover dialog opens right at this point
+    // ALWAYS open the popover dialog at this coordinate so the user explicitly chooses or confirms
     setActiveClickCoord({ x: clampedX, y: clampedY });
     setQuickSearchQuery('');
     setQuickFilterTab('unplaced');
@@ -651,15 +638,16 @@ export default function InteractiveMap({
                           <p className="text-xs font-bold text-white leading-tight">
                             {isKu ? (fp.name_ku || fp.name) : fp.name}
                           </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                           {fp.floor_level !== undefined && fp.floor_level !== null && (
-                            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30 shrink-0">
-                              {formatFloorLevel(fp.floor_level, lang)}
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/40 inline-flex items-center gap-1 shrink-0">
+                              <Layers className="w-2.5 h-2.5 text-blue-400" />
+                              <span>{isKu ? `قات: ${formatFloorLevel(fp.floor_level, lang)}` : `Floor: ${formatFloorLevel(fp.floor_level, lang)}`}</span>
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap mt-1">
                           {fp.zone && (
-                            <span className="text-[10px] text-slate-400 font-medium inline-flex items-center gap-0.5">
+                            <span className="px-1.5 py-0.5 rounded-md text-[10px] text-slate-300 font-medium bg-slate-900 border border-slate-700/60 inline-flex items-center gap-1 shrink-0">
                               <Building2 className="w-2.5 h-2.5 text-blue-400" />
                               <span>{formatEstateZone(fp.zone, lang)}</span>
                             </span>
@@ -1054,6 +1042,47 @@ export default function InteractiveMap({
                     </button>
                   </div>
                 </div>
+
+                {/* Pre-Selected Target Device Card with Clear "Confirm & Pin Here" Action */}
+                {deviceToPlace && (
+                  <div className="p-3 rounded-xl bg-blue-600/15 border border-blue-500/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-blue-300 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                        <span>{isKu ? 'ئامێری هەڵبژێردراو بۆ پینکردن:' : 'Target Selected Device:'}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setDeviceToPlace(null)}
+                        className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                      >
+                        {isKu ? 'لابردن' : 'Clear'}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold font-mono text-white truncate">{deviceToPlace.custom_label_id}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {(() => {
+                            const m = boqModels.find((b) => b.id === deviceToPlace.boq_model_id);
+                            return m ? `${m.brand} ${m.model}` : 'Hardware Item';
+                          })()}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleAssignDeviceToCoord(deviceToPlace);
+                          setDeviceToPlace(null);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/40 shrink-0 flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isKu ? 'پین بکە لێرە' : 'Pin Here'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Search & Tabs */}
                 <div className="space-y-2">
