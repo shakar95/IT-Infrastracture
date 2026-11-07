@@ -34,11 +34,13 @@ import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
 import ZoneEditorModal from './ZoneEditorModal';
 import EstateZoneEditorModal from './EstateZoneEditorModal';
+import RackManagerModal from './RackManagerModal';
 import BlueprintCanvas from './BlueprintCanvas';
 import { api } from '../services/api';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
+import { useRacks } from '../utils/rackManager';
 import { formatFloorLevel, formatShortFloorLevel } from '../utils/floorLevels';
 
 export default function InteractiveMap({
@@ -60,8 +62,10 @@ export default function InteractiveMap({
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
+  const { racks } = useRacks();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
+  const [isRackModalOpen, setIsRackModalOpen] = useState(false);
   const [selectedZoneFilter, setSelectedZoneFilter] = useState('all');
 
   // 1. All State Hooks
@@ -509,6 +513,16 @@ export default function InteractiveMap({
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-400">{t.mapSubtitle}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsRackModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-blue-400 hover:text-white border border-slate-800 hover:border-slate-700 shadow transition active:scale-95 shrink-0 cursor-pointer"
+          >
+            <Server className="w-4 h-4 text-blue-400" />
+            <span>{isKu ? 'ڕاکەکانی سێرڤەر' : 'Server Racks'}</span>
+          </button>
         </div>
       </div>
 
@@ -1513,9 +1527,23 @@ export default function InteractiveMap({
                     {selectedDevice.switch_name ? `${selectedDevice.switch_name} [${selectedDevice.switch_port}]` : '—'}
                   </span>
                 </div>
-                <div className="flex justify-between p-2 bg-slate-950/60 rounded-lg">
+                <div className="flex justify-between items-center p-2 bg-slate-950/60 rounded-lg">
                   <span className="text-slate-400">Rack Location:</span>
-                  <span className="text-slate-200">{selectedDevice.rack_unit || 'Field Unit'}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-200">
+                      {selectedDevice.rack_name
+                        ? `${selectedDevice.rack_name}${selectedDevice.rack_unit ? ` (${selectedDevice.rack_unit})` : ''}`
+                        : (selectedDevice.rack_unit || 'Field Unit')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRackModalOpen(true)}
+                      className="text-blue-400 hover:text-blue-300 p-0.5 rounded cursor-pointer transition"
+                      title={isKu ? 'دەستکاری ڕاکەکان' : 'Manage Racks'}
+                    >
+                      <Settings2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1680,6 +1708,14 @@ export default function InteractiveMap({
       <EstateZoneEditorModal
         isOpen={isEstateZoneModalOpen}
         onClose={() => setIsEstateZoneModalOpen(false)}
+        lang={lang}
+      />
+
+      {/* Dynamic Server Rack & Cabinet Manager Modal */}
+      <RackManagerModal
+        isOpen={isRackModalOpen}
+        onClose={() => setIsRackModalOpen(false)}
+        devices={devices}
         lang={lang}
       />
     </div>

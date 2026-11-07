@@ -29,10 +29,13 @@ import {
   Image as ImageIcon,
   Trash2,
   RefreshCw,
+  Settings2,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import { api } from '../services/api';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
+import { useRacks } from '../utils/rackManager';
+import RackManagerModal from './RackManagerModal';
 
 // Helper function to compress and resize image files before saving
 const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -97,6 +100,9 @@ export default function BoqModelDetailsModal({
   // Devices provisioned for this specific BOQ model
   const modelDevices = devices.filter((d) => d.boq_model_id === model.id);
   const provisionedCount = modelDevices.length;
+
+  const { racks } = useRacks();
+  const [isRackModalOpen, setIsRackModalOpen] = useState(false);
 
   // Active Tab inside modal: 'details' | 'provision' | 'instances' | 'barcode' | 'edit'
   const [activeTab, setActiveTab] = useState(initialTab || 'provision');
@@ -403,8 +409,8 @@ export default function BoqModelDetailsModal({
         vlan_id: form.vlan_id ? Number(form.vlan_id) : 10,
         switch_name: form.switch_name.trim() || null,
         switch_port: form.switch_port.trim() || null,
-        rack_name: form.placement_zone === 'rack' ? (form.rack_name.trim() || 'Main 42U Rack A') : null,
-        rack_unit: form.placement_zone === 'rack' ? (form.rack_unit.trim() || 'U1') : null,
+        rack_name: form.placement_zone === 'rack' ? (form.rack_name?.trim() || racks[0]?.name || 'Main 42U Server Rack A') : (form.rack_name?.trim() || null),
+        rack_unit: form.placement_zone === 'rack' ? (form.rack_unit?.trim() || 'U1') : (form.rack_unit?.trim() || null),
         placement_zone: form.placement_zone || defaultZone,
         floor_plan_id: form.floor_plan_id || null,
         installation_status: form.installation_status || 'Pending',
@@ -763,14 +769,41 @@ export default function BoqModelDetailsModal({
                   {form.placement_zone === 'rack' && (
                     <>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Server Rack Name</label>
-                        <input
-                          type="text"
-                          value={form.rack_name}
-                          onChange={(e) => setForm({ ...form, rack_name: e.target.value })}
-                          placeholder="Main 42U Rack A"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                            <Server className="w-3 h-3 text-blue-400" />
+                            <span>Server Rack</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setIsRackModalOpen(true)}
+                            className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition cursor-pointer"
+                          >
+                            <Settings2 className="w-2.5 h-2.5" />
+                            <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                          </button>
+                        </div>
+                        <select
+                          value={form.rack_name || ''}
+                          onChange={(e) => {
+                            if (e.target.value === '__manage__') {
+                              setIsRackModalOpen(true);
+                            } else {
+                              setForm({ ...form, rack_name: e.target.value });
+                            }
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        >
+                          <option value="">{isKu ? '— هەڵبژاردنی ڕاک —' : '— Select Server Rack —'}</option>
+                          {racks.map((r) => (
+                            <option key={r.id} value={r.name}>
+                              {isKu ? (r.nameKu || r.name) : r.name} ({r.totalUnits}U)
+                            </option>
+                          ))}
+                          <option value="__manage__" className="text-blue-400 font-semibold">
+                            {isKu ? '+ زیادکردن یان گۆڕینی ناوی ڕاکەکان...' : '+ Add / Rename Racks...'}
+                          </option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1">Rack Unit Position</label>
@@ -1733,6 +1766,14 @@ export default function BoqModelDetailsModal({
             setEditForm((prev) => ({ ...prev, category_id: newCat.id }));
           }
         }}
+        lang={lang}
+      />
+
+      {/* Dynamic Server Rack & Cabinet Manager Modal */}
+      <RackManagerModal
+        isOpen={isRackModalOpen}
+        onClose={() => setIsRackModalOpen(false)}
+        devices={devices}
         lang={lang}
       />
     </>

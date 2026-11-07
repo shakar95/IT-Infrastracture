@@ -26,9 +26,11 @@ import DeviceDetailsModal from './DeviceDetailsModal';
 import QuickAddCategoryModal from './QuickAddCategoryModal';
 import ZoneEditorModal from './ZoneEditorModal';
 import EstateZoneEditorModal from './EstateZoneEditorModal';
+import RackManagerModal from './RackManagerModal';
 import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
+import { useRacks } from '../utils/rackManager';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -48,6 +50,8 @@ export default function DeviceProvisioning({
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
+  const { racks } = useRacks();
+  const [isRackModalOpen, setIsRackModalOpen] = useState(false);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -174,8 +178,8 @@ export default function DeviceProvisioning({
       vlan_id: deviceForm.vlan_id ? Number(deviceForm.vlan_id) : 10,
       switch_name: deviceForm.switch_name.trim() || null,
       switch_port: deviceForm.switch_port.trim() || null,
-      rack_name: deviceForm.placement_zone === 'rack' ? (deviceForm.rack_name.trim() || 'Main 42U Rack A') : null,
-      rack_unit: deviceForm.placement_zone === 'rack' ? (deviceForm.rack_unit.trim() || 'U1') : null,
+      rack_name: deviceForm.rack_name ? deviceForm.rack_name.trim() : null,
+      rack_unit: deviceForm.rack_unit ? deviceForm.rack_unit.trim() : null,
       floor_plan_id: deviceForm.floor_plan_id || null,
     };
 
@@ -207,13 +211,23 @@ export default function DeviceProvisioning({
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{t.devTitle}</h2>
           <p className="text-xs sm:text-sm text-slate-400">{t.devSubtitle}</p>
         </div>
-        <button
-          onClick={handleOpenNew}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          {t.btnNewSingleDevice}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsRackModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-blue-400 hover:text-white border border-slate-800 hover:border-slate-700 shadow transition active:scale-95 shrink-0 cursor-pointer"
+          >
+            <Server className="w-4 h-4 text-blue-400" />
+            <span>{isKu ? 'بەڕێوەبردنی ڕاکەکان' : 'Manage Racks'}</span>
+          </button>
+          <button
+            onClick={handleOpenNew}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/30 transition active:scale-95 shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            {t.btnNewSingleDevice}
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -376,10 +390,15 @@ export default function DeviceProvisioning({
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
-                      {dev.rack_unit ? (
+                      {dev.rack_name ? (
+                        <div className="flex flex-col">
+                          <span className="text-white text-xs font-medium">{dev.rack_name}</span>
+                          {dev.rack_unit && <span className="text-amber-300 font-mono text-[11px]">{dev.rack_unit}</span>}
+                        </div>
+                      ) : dev.rack_unit ? (
                         <span className="text-amber-300 font-mono">{dev.rack_unit}</span>
                       ) : (
-                        <span className="text-slate-500">Field Unit</span>
+                        <span className="text-slate-500 text-xs">Field Unit</span>
                       )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -480,7 +499,7 @@ export default function DeviceProvisioning({
                         ...deviceForm,
                         boq_model_id: e.target.value,
                         placement_zone: sel?.is_rack_mounted ? 'rack' : deviceForm.placement_zone,
-                        rack_name: sel?.is_rack_mounted ? 'Main 42U Rack A' : deviceForm.rack_name,
+                        rack_name: sel?.is_rack_mounted ? (deviceForm.rack_name || racks[0]?.name || 'Main 42U Server Rack A') : deviceForm.rack_name,
                       });
                     }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
@@ -713,8 +732,48 @@ export default function DeviceProvisioning({
                 </div>
               </div>
 
-              {/* Rack Unit & Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Server Rack & Rack Unit & Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Server Rack Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                      <Server className="w-3 h-3 text-blue-400" />
+                      <span>{isKu ? 'ڕاکی سێرڤەر (Rack)' : 'Server Rack'}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsRackModalOpen(true)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition cursor-pointer"
+                    >
+                      <Settings2 className="w-2.5 h-2.5" />
+                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                    </button>
+                  </div>
+                  <select
+                    value={deviceForm.rack_name || ''}
+                    onChange={(e) => {
+                      if (e.target.value === '__manage__') {
+                        setIsRackModalOpen(true);
+                      } else {
+                        setDeviceForm({ ...deviceForm, rack_name: e.target.value });
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="">{isKu ? '— بێ دیاریکردنی ڕاک (Field) —' : '— None / Field Device —'}</option>
+                    {racks.map((r) => (
+                      <option key={r.id} value={r.name}>
+                        {isKu ? (r.nameKu || r.name) : r.name} ({r.totalUnits}U)
+                      </option>
+                    ))}
+                    <option value="__manage__" className="text-blue-400 font-semibold">
+                      {isKu ? '+ زیادکردن یان گۆڕینی ناوی ڕاکەکان...' : '+ Add / Rename Racks...'}
+                    </option>
+                  </select>
+                </div>
+
+                {/* 2. Rack Unit Position */}
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.rackUnitPos}</label>
                   <input
@@ -722,15 +781,17 @@ export default function DeviceProvisioning({
                     value={deviceForm.rack_unit}
                     onChange={(e) => setDeviceForm({ ...deviceForm, rack_unit: e.target.value })}
                     placeholder="e.g. U14-U16"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
+
+                {/* 3. Installation Status */}
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.status}</label>
                   <select
                     value={deviceForm.installation_status}
                     onChange={(e) => setDeviceForm({ ...deviceForm, installation_status: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
                     <option value="Pending">{t.statusPending}</option>
                     <option value="Installed">{t.statusInstalled}</option>
@@ -815,6 +876,14 @@ export default function DeviceProvisioning({
       <EstateZoneEditorModal
         isOpen={isEstateZoneModalOpen}
         onClose={() => setIsEstateZoneModalOpen(false)}
+        lang={lang}
+      />
+
+      {/* Dynamic Server Rack & Cabinet Manager Modal */}
+      <RackManagerModal
+        isOpen={isRackModalOpen}
+        onClose={() => setIsRackModalOpen(false)}
+        devices={devices}
         lang={lang}
       />
     </div>
