@@ -212,7 +212,7 @@ export default function BlueprintCanvas({
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'contain',
+          objectFit: 'fill',
           imageRendering: '-webkit-optimize-contrast',
         }}
         className="pointer-events-none select-none block"
@@ -229,7 +229,7 @@ export default function BlueprintCanvas({
       style={{
         width: '100%',
         height: '100%',
-        objectFit: 'contain',
+        objectFit: 'fill',
         imageRendering: '-webkit-optimize-contrast',
       }}
       className="pointer-events-none select-none block"
