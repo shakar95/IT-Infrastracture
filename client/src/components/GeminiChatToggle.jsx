@@ -62,7 +62,7 @@ Feel free to ask me anything about:
       role: 'assistant',
       content: initialGreeting,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      provider: 'gemini-1.5-flash',
+      provider: 'gemini-2.5-flash',
     },
   ]);
 
@@ -138,7 +138,7 @@ Feel free to ask me anything about:
         role: 'assistant',
         content: res.reply || (isKu ? 'وەڵام وەرگیرا بەڵام بەتاڵ بوو.' : 'Response received successfully.'),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        provider: res.provider || 'gemini-1.5-flash',
+        provider: res.provider || 'gemini-2.5-flash',
       };
 
       setMessages((prev) => [...prev, aiMsg]);
@@ -166,7 +166,7 @@ Feel free to ask me anything about:
           role: 'assistant',
           content: initialGreeting,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          provider: 'gemini-1.5-flash',
+          provider: 'gemini-2.5-flash',
         },
       ]);
     }
@@ -622,3 +622,4 @@ Feel free to ask me anything about:
     </>
   );
 }
+

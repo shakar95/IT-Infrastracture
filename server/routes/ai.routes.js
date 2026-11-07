@@ -1,6 +1,7 @@
 import express from 'express';
 import { scanDeviceLabel, troubleshootIssue, chatInfrastructureAssistant } from '../services/gemini.service.js';
 import { mockBoqModels, mockDevices, mockCategories } from '../services/mockData.js';
+import { supabase, isSupabaseConfigured } from '../config/supabase.js';
 
 const router = express.Router();
 
@@ -71,9 +72,22 @@ router.post('/troubleshoot', async (req, res) => {
     let boqModel = null;
 
     if (device_id) {
-      device = mockDevices.find((d) => d.id === device_id);
-      if (device) {
-        boqModel = mockBoqModels.find((m) => m.id === device.boq_model_id);
+      if (isSupabaseConfigured) {
+        const { data: dbDev } = await supabase
+          .from('devices')
+          .select('*, boq_models(*, categories(*))')
+          .eq('id', device_id)
+          .maybeSingle();
+        if (dbDev) {
+          device = dbDev;
+          boqModel = dbDev.boq_models || null;
+        }
+      }
+      if (!device) {
+        device = mockDevices.find((d) => d.id === device_id);
+        if (device) {
+          boqModel = mockBoqModels.find((m) => m.id === device.boq_model_id);
+        }
       }
     } else {
       // Auto-detect device from query text (e.g. "TSW-770" or "LPR" or "AP-GF-01")
@@ -112,6 +126,44 @@ router.post('/troubleshoot', async (req, res) => {
 router.post('/chat', async (req, res) => {
   try {
     const { messages = [], query = '', context = {} } = req.body;
+
+    // Automatically load live devices and BOQ models if client context is empty
+    if (!context.devices || !Array.isArray(context.devices) || context.devices.length === 0) {
+      if (isSupabaseConfigured) {
+        const { data: dbDevs } = await supabase
+          .from('devices')
+          .select('*, boq_models(*, categories(*)), floor_plans(*)');
+        if (dbDevs && dbDevs.length > 0) {
+          context.devices = dbDevs.map((d) => ({
+            ...d,
+            boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : null,
+          }));
+        } else {
+          context.devices = mockDevices;
+        }
+      } else {
+        context.devices = mockDevices;
+      }
+    }
+
+    if (!context.boqModels || !Array.isArray(context.boqModels) || context.boqModels.length === 0) {
+      if (isSupabaseConfigured) {
+        const { data: dbModels } = await supabase
+          .from('boq_models')
+          .select('*, categories(*)');
+        if (dbModels && dbModels.length > 0) {
+          context.boqModels = dbModels.map((m) => ({
+            ...m,
+            category: m.categories,
+          }));
+        } else {
+          context.boqModels = mockBoqModels;
+        }
+      } else {
+        context.boqModels = mockBoqModels;
+      }
+    }
+
     const result = await chatInfrastructureAssistant({ messages, query, context });
     res.json(result);
   } catch (err) {

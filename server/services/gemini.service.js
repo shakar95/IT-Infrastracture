@@ -1,19 +1,66 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { mockBoqModels, mockManualKnowledge } from './mockData.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Ensure .env is loaded reliably from workspace root and server/ directory
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../server/.env') });
 
-const apiKey = process.env.GEMINI_API_KEY;
-let genAI = null;
+function getApiKey() {
+  return (process.env.GEMINI_API_KEY || '').trim();
+}
 
-if (apiKey && apiKey !== 'your-gemini-api-key') {
-  try {
-    genAI = new GoogleGenerativeAI(apiKey);
-    console.log('✅ Google Gemini API client initialized.');
-  } catch (err) {
-    console.error('⚠️ Failed to initialize Gemini API:', err.message);
+function getGenAI() {
+  const key = getApiKey();
+  if (key && key !== 'your-gemini-api-key') {
+    return new GoogleGenerativeAI(key);
   }
+  return null;
+}
+
+export const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-pro',
+  'gemini-pro-latest',
+];
+
+/**
+ * Universal Gemini caller with resilient fallback across active model versions
+ */
+export async function callGeminiWithFallback(contents, options = {}) {
+  const client = getGenAI();
+  if (!client) {
+    throw new Error('GEMINI_API_KEY is not configured or invalid in .env');
+  }
+
+  let lastError = null;
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      const model = client.getGenerativeModel({ model: modelName, ...options });
+      const result = await model.generateContent(contents);
+      const text = result.response.text();
+      if (text) {
+        return { text, modelName };
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️ Model "${modelName}" failed: ${err.message}. Trying next candidate...`);
+    }
+  }
+
+  throw lastError || new Error('All Gemini candidate models failed to respond.');
+}
+
+const initialKey = getApiKey();
+if (initialKey && initialKey !== 'your-gemini-api-key') {
+  console.log(`✅ Google Gemini API key detected (prefix: ${initialKey.substring(0, 6)}...). Candidate models: ${CANDIDATE_MODELS.join(', ')}`);
 } else {
   console.log('ℹ️ GEMINI_API_KEY not provided. Intelligent heuristic fallback active for OCR & RAG.');
 }
@@ -25,25 +72,8 @@ if (apiKey && apiKey !== 'your-gemini-api-key') {
  */
 export async function scanDeviceLabel(imageBase64, mimeType = 'image/jpeg', availableModels = mockBoqModels) {
   // If Gemini API is available and key provided, call Gemini Vision
-  if (genAI) {
+  if (getGenAI()) {
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      
-      const prompt = `
-You are an expert IT & ELV Infrastructure Hardware Engineer. 
-Analyze this photo of an equipment label / serial number sticker / barcode on an enterprise device.
-Extract the following exact fields in valid JSON format:
-{
-  "brand": "Brand name if visible (e.g., Ubiquiti, Crestron, Hikvision, Televes, Cisco, Akuvox, Trinnov, etc.)",
-  "model": "Model number or product name (e.g., U7-Pro, TSW-770, DS-2CD2087G2-LU, CP4N, etc.)",
-  "serial_number": "Serial number (e.g., UI-U7P-992182, SN:12345678, etc.)",
-  "mac_address": "MAC Address in format XX:XX:XX:XX:XX:XX (uppercase, colons). If only hex without colons is found, format it with colons.",
-  "confidence_score": 0.95,
-  "raw_text_detected": "Brief summary of text seen on sticker"
-}
-Return ONLY pure JSON. Do not wrap in markdown quotes.
-`;
-
       const imagePart = {
         inlineData: {
           data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
@@ -51,8 +81,7 @@ Return ONLY pure JSON. Do not wrap in markdown quotes.
         },
       };
 
-      const result = await model.generateContent([prompt, imagePart]);
-      const responseText = result.response.text().trim();
+      const { text: responseText, modelName } = await callGeminiWithFallback([prompt, imagePart]);
       const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
       const extracted = JSON.parse(cleanJson);
 
@@ -64,7 +93,7 @@ Return ONLY pure JSON. Do not wrap in markdown quotes.
         extracted,
         matched_model: matchedModel,
         matched_category_id: matchedModel ? matchedModel.category_id : null,
-        provider: 'gemini-1.5-flash',
+        provider: modelName,
       };
     } catch (err) {
       console.warn('⚠️ Gemini Vision call failed, using heuristic extraction:', err.message);
@@ -156,9 +185,8 @@ Always reference the exact IP address, switch port, and rack location provided i
 `;
 
   // Call Gemini if key exists
-  if (genAI) {
+  if (getGenAI()) {
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
       const prompt = `
 ${systemInstructions}
 
@@ -170,15 +198,15 @@ ${relevantManual ? relevantManual.content : 'Follow enterprise standard ELV trou
 USER ISSUE REPORT:
 "${query}"
 
-Provide your professional, step-by-step diagnostic instructions now.
+Provide your professional, step-by-step diagnostic instructions now. If the user asked in Kurdish, reply in Sorani Kurdish (شێوەزاری سۆرانی بە ڕێنووسی کوردی).
 `;
-      const result = await model.generateContent(prompt);
+      const { text, modelName } = await callGeminiWithFallback(prompt);
       return {
         success: true,
-        solution: result.response.text(),
+        solution: text,
         device_context: device,
         manual_used: relevantManual ? relevantManual.section : null,
-        provider: 'gemini-1.5-flash',
+        provider: modelName,
       };
     } catch (err) {
       console.warn('⚠️ Gemini RAG call failed, using intelligent domain generator:', err.message);
@@ -310,23 +338,37 @@ export async function chatInfrastructureAssistant({ messages = [], query = '', c
   const projectName = context.projectName || 'Iraq Sitak Villa Project';
 
   // Build condensed, high-density inventory data for AI
-  const condensedInventory = devices.slice(0, 300).map((d) => {
-    const m = boqModels.find((b) => b.id === d.boq_model_id);
+  const condensedInventory = devices.slice(0, 350).map((d) => {
+    const m = d.boq_model || d.boq_models || boqModels.find((b) => b.id === d.boq_model_id);
+    const cat = d.category || m?.category || categories.find((c) => c.id === m?.category_id || c.id === d.category_id);
     return {
-      label: d.custom_label_id,
-      model: m ? `${m.brand} ${m.model}` : 'Generic Device',
+      label: d.custom_label_id || 'Unnamed Device',
+      brand: m?.brand || '',
+      model: m?.model || 'Generic Device',
+      category: cat?.name || m?.category_id || 'ELV',
       ip: d.ip_address || 'Unassigned',
       mac: d.mac_address || '—',
-      vlan: d.vlan_id || 10,
+      vlan: d.vlan_id != null ? d.vlan_id : '10',
       switch: d.switch_name ? `${d.switch_name} [${d.switch_port || 'P1'}]` : 'Unpatched',
-      rack: d.rack_name ? `${d.rack_name}${d.rack_unit ? ` (${d.rack_unit})` : ''}` : 'Field',
+      rack: d.rack_name ? `${d.rack_name}${d.rack_unit ? ` (U${d.rack_unit})` : ''}` : 'Field',
       zone: d.placement_zone || 'indoor',
       status: d.installation_status || 'Pending',
+      pinned: (d.pos_x != null && d.pos_y != null) ? 'Pinned on Map' : 'Unpinned',
+      notes: d.notes || '',
     };
   });
 
+  const condensedBoq = boqModels.slice(0, 150).map((b) => ({
+    brand: b.brand,
+    model: b.model,
+    category: b.category?.name || b.category_id || '',
+    quantity: b.quantity || 1,
+    unit_cost: b.unit_cost != null ? `$${b.unit_cost}` : '$0',
+    description: b.description || '',
+  }));
+
   const systemInstructions = `
-You are Gemini Infrastructure AI, the principal enterprise network architect and ELV automation specialist for the "${projectName}".
+You are Gemini Infrastructure AI, the principal enterprise network architect and ELV automation specialist for "${projectName}".
 You have real-time live access to the project's hardware inventory, device connection topology, switch patching, server racks, and network configurations.
 
 REAL-TIME PROJECT DATA SUMMARY:
@@ -334,7 +376,7 @@ REAL-TIME PROJECT DATA SUMMARY:
 - Total Hardware Devices: ${devices.length}
 - Total BOQ Catalog Models: ${boqModels.length}
 - Total Server Racks: ${racks.length}
-- Categories: ${categories.map((c) => c.name).join(', ') || 'CCTV, Wi-Fi, AV, Intercom, Network, Access Control'}
+- Categories: ${categories.map((c) => c.name).join(', ') || 'CCTV, Wi-Fi 7, AV, Intercom, Network, Access Control'}
 
 CURRENT DEVICE INVENTORY & CONNECTION TOPOLOGY:
 ${JSON.stringify(condensedInventory, null, 2)}
@@ -344,37 +386,42 @@ ${JSON.stringify(
   racks.map((r) => ({
     name: r.name,
     nameKu: r.nameKu,
-    units: `${r.totalUnits}U`,
+    units: `${r.totalUnits || 42}U`,
     location: r.location || 'Server Room',
-    zone: r.zone,
+    zone: r.zone || 'main_villa',
   })),
   null,
   2
 )}
 
-CORE RESPONSIBILITIES & CAPABILITIES:
-1. Answer questions about any device, IP allocation, VLAN, MAC address, switch port, rack unit, and zone.
-2. Explain physical & logical connections (e.g. which devices connect to which switch, which port is used, which rack houses which device).
-3. GENERATE TABLE REPORTS ON DEMAND:
-   - When the user asks for a table, report, breakdown, or list (e.g., "تەیبڵ", "table", "report", "خشتە", "لیست"), generate an exhaustive, clean Markdown table with headers:
+CURRENT BOQ CATALOG MODELS:
+${JSON.stringify(condensedBoq, null, 2)}
+
+CORE RESPONSIBILITIES & BEHAVIOR:
+1. LANGUAGE PRIORITY (سۆرانی):
+   - When the user writes or asks in Kurdish, you MUST respond in professional, natural Sorani Kurdish (شێوەزاری سۆرانی، بە ئەلفوبێ و ڕێنووسی کوردی/عەرەبی).
+   - Keep standard networking & IT terms in English (e.g., IP Address, VLAN, Switch, Port, Rack, Gateway, MAC, Subnet, BOQ, SSID) so that technicians and engineers have crystal clarity.
+   - If the user writes in English, reply in professional English.
+2. PRECISE, CONCRETE FACTUALITY:
+   - Base all answers directly on the live inventory, racks, and BOQ data provided above.
+   - Do NOT give generic boilerplate or canned disclaimers. Always give the exact device labels, exact IP addresses, switch port numbers, and rack locations.
+3. EQUIPMENT INTERCONNECTIVITY & TOPOLOGY:
+   - Clearly explain which devices connect to which switch and port.
+   - Clearly state which devices are mounted in which rack and at what unit (U).
+   - Clarify VLAN and IP assignments.
+4. TABLE REPORTS ON DEMAND:
+   - When the user asks for a table, report, breakdown, or list (e.g., "تەیبڵ", "table", "report", "خشتە", "لیست", "جەدوەل"), generate an exhaustive, clean Markdown table with headers:
      | Custom Label | Brand & Model | IP Address | VLAN | Switch Port | Server Rack | Status |
      | --- | --- | --- | --- | --- | --- | --- |
-   - Include accurate data from the live inventory above.
-4. LANGUAGE SUPPORT:
-   - Fluent Sorani Kurdish (کوردی) and English.
-   - If the user writes in Kurdish, respond in natural, professional Sorani Kurdish while keeping technical terms like IP, Switch, Port, VLAN, Rack, Gateway clear in English.
-   - If the user writes in English, reply in English.
-5. Provide actionable, concise, engineering-grade answers.
+   - Use the live data to populate the rows.
 `;
 
-  // Try live Gemini API first if configured
-  if (genAI) {
+  // Try live Gemini API with dynamic model fallback
+  if (getGenAI()) {
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
       // Build chat history
       const formattedHistory = (messages || [])
-        .slice(-10)
+        .slice(-12)
         .map((m) => `${m.role === 'user' ? 'User' : 'Gemini AI'}: ${m.content}`)
         .join('\n\n');
 
@@ -387,16 +434,15 @@ ${formattedHistory}
 USER'S LATEST REQUEST:
 "${latestQuery}"
 
-Provide your professional response now. If a table or report was requested, provide a complete, well-formatted Markdown table.
+Provide your professional response now.
 `;
 
-      const result = await model.generateContent(fullPrompt);
-      const replyText = result.response.text();
+      const { text: replyText, modelName } = await callGeminiWithFallback(fullPrompt);
 
       return {
         success: true,
         reply: replyText,
-        provider: 'gemini-1.5-flash',
+        provider: modelName,
       };
     } catch (err) {
       console.warn('⚠️ Live Gemini Chat API failed, falling back to local heuristic engine:', err.message);
