@@ -393,6 +393,10 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
             matchedCategory = autoClassifyCategory(description, brand, model, existingCategories);
           }
 
+          const safeZone = ['indoor', 'outdoor', 'rack', 'safe_room'].includes(zoneStr)
+            ? zoneStr
+            : (zoneStr.includes('rack') || isRack ? 'rack' : (zoneStr.includes('out') ? 'outdoor' : (zoneStr.includes('safe') ? 'safe_room' : 'indoor')));
+
           parsedItems.push({
             id: `import-${index}-${Date.now()}`,
             brand: brand || 'Generic',
@@ -403,9 +407,9 @@ export async function parseBoqExcelFile(file, existingCategories = []) {
             description,
             total_qty: qty,
             unit_cost: unitCost,
-            placement_zone: ['indoor', 'outdoor', 'rack', 'safe_room'].includes(zoneStr) ? zoneStr : 'indoor',
-            allowed_zones: [zoneStr || 'indoor'],
-            is_rack_mounted: isRack,
+            placement_zone: safeZone,
+            allowed_zones: [safeZone],
+            is_rack_mounted: isRack || safeZone === 'rack',
             rack_unit_size: rackSize,
             product_image_url: imageUrl,
           });

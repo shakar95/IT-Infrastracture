@@ -43,6 +43,15 @@ router.get('/', async (req, res) => {
           floor_plan: d.floor_plans || null,
         }));
 
+        if (project_id) {
+          result = result.filter((d) => {
+            if (project_id === '0f7f7c37-7097-4094-b146-c1b6b0b36dda' || project_id === 'proj-sitak') {
+              return !d.project_id || d.project_id === 'proj-sitak' || d.project_id === '0f7f7c37-7097-4094-b146-c1b6b0b36dda';
+            }
+            return d.project_id === project_id;
+          });
+        }
+
         if (category_id) {
           result = result.filter((d) => d.boq_model?.category_id === category_id);
         }

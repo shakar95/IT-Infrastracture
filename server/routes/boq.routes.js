@@ -10,6 +10,42 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+// Strict validator and sanitizer for PostgreSQL enum zone_type ('indoor', 'outdoor', 'rack', 'safe_room')
+function sanitizeAllowedZones(rawZones, rawPlacementZone, isRack) {
+  const VALID_ENUMS = new Set(['indoor', 'outdoor', 'rack', 'safe_room']);
+  const result = new Set();
+  const candidates = [];
+  if (Array.isArray(rawZones)) candidates.push(...rawZones);
+  else if (typeof rawZones === 'string') candidates.push(rawZones);
+  if (rawPlacementZone) candidates.push(rawPlacementZone);
+
+  for (const item of candidates) {
+    if (!item) continue;
+    const str = String(item).toLowerCase().trim();
+    if (VALID_ENUMS.has(str)) {
+      result.add(str);
+    } else if (str.includes('rack') || str.includes('ڕاک') || str.includes('سوویچ') || str.includes('سێرڤەر')) {
+      result.add('rack');
+    } else if (str.includes('out') || str.includes('دەرەوە') || str.includes('باخچە') || str.includes('حەوشە')) {
+      result.add('outdoor');
+    } else if (str.includes('safe') || str.includes('خەزنە')) {
+      result.add('safe_room');
+    } else if (str.includes('in') || str.includes('ژوور') || str.includes('ناو')) {
+      result.add('indoor');
+    }
+  }
+  if (isRack) result.add('rack');
+  if (result.size === 0) result.add('indoor');
+  return Array.from(result);
+}
+
+const isProjectMatch = (modelProj, targetProj) => {
+  if (!targetProj || targetProj === '0f7f7c37-7097-4094-b146-c1b6b0b36dda' || targetProj === 'proj-sitak') {
+    return !modelProj || modelProj === 'proj-sitak' || modelProj === '0f7f7c37-7097-4094-b146-c1b6b0b36dda';
+  }
+  return modelProj === targetProj;
+};
+
 // GET all BOQ models with provisioned counts (Scoped to project_id)
 router.get('/', async (req, res) => {
   try {
@@ -20,17 +56,19 @@ router.get('/', async (req, res) => {
       const { data: models, error } = await query;
       if (!error && models) {
         const { data: devices } = await supabase.from('devices').select('id, boq_model_id');
-        const enhanced = models.map((m) => ({
-          ...m,
-          provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
-        }));
+        const enhanced = models
+          .filter((m) => isProjectMatch(m.project_id, targetProject))
+          .map((m) => ({
+            ...m,
+            provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
+          }));
         return res.json(enhanced);
       }
     }
 
     // In-memory fallback - Strictly filter by project_id
     const enriched = mockBoqModels
-      .filter((m) => (m.project_id || 'proj-sitak') === targetProject)
+      .filter((m) => isProjectMatch(m.project_id, targetProject))
       .map((m) => {
         const cat = mockCategories.find((c) => c.id === m.category_id);
         const provCount = mockDevices.filter((d) => d.boq_model_id === m.id).length;
@@ -75,13 +113,13 @@ router.post('/', async (req, res) => {
       brand: brand.trim(),
       model: model.trim(),
       description: description || '',
-      total_qty: Number(total_qty) || 1,
-      unit_cost: Number(unit_cost) || 0,
+      total_qty: Math.max(1, parseInt(total_qty, 10) || 1),
+      unit_cost: Math.max(0, parseFloat(unit_cost) || 0),
       product_image_url: product_image_url || '/default-ict-device.svg',
       manual_pdf_url: manual_pdf_url || null,
-      allowed_zones: Array.isArray(allowed_zones) ? allowed_zones : ['indoor'],
+      allowed_zones: sanitizeAllowedZones(allowed_zones, null, Boolean(is_rack_mounted)),
       is_rack_mounted: Boolean(is_rack_mounted),
-      rack_unit_size: Number(rack_unit_size) || 0,
+      rack_unit_size: Math.max(0, parseInt(rack_unit_size, 10) || 0),
       custom_specs: custom_specs || {},
     };
 
@@ -90,7 +128,7 @@ router.post('/', async (req, res) => {
       // Graceful fallback if boq_models table does not yet have 'project_id' column in Supabase schema cache
       if (error && (error.message?.includes('project_id') || error.code === 'PGRST204')) {
         console.warn('Supabase boq_models table missing project_id column, retrying insert without project_id...');
-        const { project_id, ...payloadWithoutProject } = payload;
+        const { project_id: _, ...payloadWithoutProject } = payload;
         const retryResult = await supabase.from('boq_models').insert([payloadWithoutProject]).select('*, categories(*)').single();
         data = retryResult.data;
         error = retryResult.error;
@@ -114,7 +152,7 @@ router.post('/', async (req, res) => {
 // POST /api/boq/batch - Smart Bulk import with deduplication, field update, skip & auto-versioning
 router.post('/batch', async (req, res) => {
   try {
-    const { items = [], project_id = 'proj-sitak' } = req.body;
+    const { items = [], project_id = '0f7f7c37-7097-4094-b146-c1b6b0b36dda' } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'No items provided for batch import' });
     }
@@ -174,32 +212,35 @@ router.post('/batch', async (req, res) => {
       // Match against existing database models
       const existing = currentDbModels.find(
         (m) =>
-          (m.model && m.model.trim().toLowerCase() === normModel && m.brand && m.brand.trim().toLowerCase() === normBrand) ||
-          (m.model && m.model.trim().toLowerCase() === normModel)
+          m.model &&
+          m.model.trim().toLowerCase() === normModel &&
+          (!m.brand || m.brand.trim().toLowerCase() === normBrand || brand === 'Generic')
       );
 
       // Validate category ID
       let categoryId = rawItem.category_id;
       if (!categoryId || !dbCategories.some((c) => c.id === categoryId)) {
         // Try match by name
-        const catStr = (rawItem.category_name || rawItem.category || '').toLowerCase();
+        const catStr = (rawItem.category_name || rawItem.category || '').toLowerCase().trim();
         const matched = dbCategories.find(
           (c) =>
             c.name.toLowerCase() === catStr ||
             (c.name_ku && c.name_ku.toLowerCase() === catStr) ||
-            c.name.toLowerCase().includes(catStr)
+            c.name.toLowerCase().includes(catStr) ||
+            catStr.includes(c.name.toLowerCase())
         );
         categoryId = matched ? matched.id : defaultCategoryId;
       }
+      if (!categoryId || !dbCategories.some((c) => c.id === categoryId)) {
+        categoryId = defaultCategoryId;
+      }
 
-      const targetQty = Math.max(1, Number(rawItem.total_qty) || 1);
-      const targetUnitCost = Number(rawItem.unit_cost) || 0;
+      const targetQty = Math.max(1, parseInt(rawItem.total_qty, 10) || 1);
+      const targetUnitCost = Math.max(0, parseFloat(rawItem.unit_cost) || 0);
       const targetDesc = (rawItem.description || '').trim();
-      const targetZone = Array.isArray(rawItem.allowed_zones) && rawItem.allowed_zones.length > 0
-        ? rawItem.allowed_zones
-        : [rawItem.placement_zone || 'indoor'];
       const targetIsRack = Boolean(rawItem.is_rack_mounted);
-      const targetRackSize = Number(rawItem.rack_unit_size) || 0;
+      const targetRackSize = Math.max(0, parseInt(rawItem.rack_unit_size, 10) || (targetIsRack ? 1 : 0));
+      const targetZone = sanitizeAllowedZones(rawItem.allowed_zones, rawItem.placement_zone, targetIsRack);
       const targetImg = rawItem.product_image_url || defaultImg;
 
       if (!existing) {
@@ -251,25 +292,25 @@ router.post('/batch', async (req, res) => {
           diffs.push({ field: 'rack_unit_size', label: 'Rack Size', oldVal: existing.rack_unit_size, newVal: targetRackSize });
         }
 
-        if (diffs.length > 0) {
-          const itemRecord = {
-            id: existing.id,
-            project_id: existing.project_id || project_id,
-            brand: existing.brand || brand,
-            model: existing.model || model,
-            category_id: categoryId,
-            description: targetDesc || existing.description,
-            total_qty: targetQty,
-            unit_cost: targetUnitCost,
-            product_image_url: targetImg,
-            manual_pdf_url: rawItem.manual_pdf_url || existing.manual_pdf_url || null,
-            allowed_zones: targetZone,
-            is_rack_mounted: targetIsRack,
-            rack_unit_size: targetRackSize,
-            custom_specs: rawItem.custom_specs || existing.custom_specs || {},
-            updated_at: new Date().toISOString(),
-          };
+        const itemRecord = {
+          id: existing.id,
+          project_id: project_id || existing.project_id,
+          brand: existing.brand || brand,
+          model: existing.model || model,
+          category_id: categoryId,
+          description: targetDesc || existing.description,
+          total_qty: targetQty,
+          unit_cost: targetUnitCost,
+          product_image_url: targetImg,
+          manual_pdf_url: rawItem.manual_pdf_url || existing.manual_pdf_url || null,
+          allowed_zones: targetZone,
+          is_rack_mounted: targetIsRack,
+          rack_unit_size: targetRackSize,
+          custom_specs: rawItem.custom_specs || existing.custom_specs || {},
+          updated_at: new Date().toISOString(),
+        };
 
+        if (diffs.length > 0) {
           upsertBatch.push(itemRecord);
           updated.push({
             ...itemRecord,
@@ -283,14 +324,18 @@ router.post('/batch', async (req, res) => {
             details: diffs.map((d) => `${d.label}: ${d.oldVal} ➔ ${d.newVal}`).join(', '),
           });
         } else {
+          // If project_id needs aligning to active project, include in upsert
+          if (existing.project_id !== project_id) {
+            upsertBatch.push(itemRecord);
+          }
           skipped.push(existing);
         }
       }
     }
 
-    // 4. Execute Batch Upsert into Supabase in fast chunks
+    // 4. Execute Batch Upsert into Supabase in safe chunks
     if (isSupabaseConfigured && upsertBatch.length > 0) {
-      const CHUNK_SIZE = 100;
+      const CHUNK_SIZE = 50;
       for (let i = 0; i < upsertBatch.length; i += CHUNK_SIZE) {
         const chunk = upsertBatch.slice(i, i + CHUNK_SIZE);
         try {
@@ -299,15 +344,30 @@ router.post('/batch', async (req, res) => {
             .upsert(chunk, { onConflict: 'brand,model' });
 
           if (upsertErr) {
-            console.error('Supabase batch upsert chunk error:', upsertErr);
-            // Fallback: try inserting without project_id if column missing in Supabase schema cache
-            if (upsertErr.message?.includes('project_id') || upsertErr.code === 'PGRST204') {
-              const cleanedChunk = chunk.map(({ project_id: _, ...rest }) => rest);
-              await supabase.from('boq_models').upsert(cleanedChunk, { onConflict: 'brand,model' });
+            console.warn('Chunk upsert error, retrying item-by-item:', upsertErr.message);
+            // Fallback: try item-by-item so any single problematic row never fails the rest
+            for (const singleItem of chunk) {
+              try {
+                const { error: itemErr } = await supabase
+                  .from('boq_models')
+                  .upsert([singleItem], { onConflict: 'brand,model' });
+                if (itemErr) {
+                  console.error(`Item upsert error (${singleItem.brand} ${singleItem.model}):`, itemErr.message);
+                }
+              } catch (innerErr) {
+                console.error(`Item upsert exception (${singleItem.brand} ${singleItem.model}):`, innerErr.message);
+              }
             }
           }
         } catch (chunkErr) {
-          console.error('Error executing chunk upsert:', chunkErr);
+          console.error('Error executing chunk upsert, fallback to item-by-item:', chunkErr.message);
+          for (const singleItem of chunk) {
+            try {
+              await supabase.from('boq_models').upsert([singleItem], { onConflict: 'brand,model' });
+            } catch (innerErr) {
+              console.error(`Fallback item upsert exception:`, innerErr.message);
+            }
+          }
         }
       }
     }
@@ -316,11 +376,12 @@ router.post('/batch', async (req, res) => {
     for (const item of upsertBatch) {
       const idx = mockBoqModels.findIndex((m) => m.brand === item.brand && m.model === item.model);
       if (idx !== -1) {
-        mockBoqModels[idx] = { ...mockBoqModels[idx], ...item };
+        mockBoqModels[idx] = { ...mockBoqModels[idx], ...item, project_id };
       } else {
         mockBoqModels.push({
           id: item.id || `boq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           created_at: new Date().toISOString(),
+          project_id,
           ...item,
         });
       }
@@ -329,9 +390,9 @@ router.post('/batch', async (req, res) => {
     // 5. Version snapshot
     let createdVersion = null;
     if (added.length > 0 || updated.length > 0) {
-      const existingProjectVersions = mockBoqVersions.filter((v) => v.project_id === project_id);
+      const existingProjectVersions = mockBoqVersions.filter((v) => isProjectMatch(v.project_id, project_id));
       const nextVerNum = `v1.${existingProjectVersions.length}`;
-      const finalProjectModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+      const finalProjectModels = mockBoqModels.filter((m) => isProjectMatch(m.project_id, project_id));
 
       createdVersion = {
         id: `ver-${Date.now()}`,
@@ -358,14 +419,14 @@ router.post('/batch', async (req, res) => {
     }
 
     // 6. Fetch fresh, complete list of models to return to frontend
-    let finalModels = mockBoqModels.filter((m) => (m.project_id || 'proj-sitak') === project_id);
+    let finalModels = mockBoqModels.filter((m) => isProjectMatch(m.project_id, project_id));
     if (isSupabaseConfigured) {
       try {
         const { data: dbModels } = await supabase.from('boq_models').select('*, categories(*)');
         if (dbModels && dbModels.length > 0) {
           const { data: devices } = await supabase.from('devices').select('id, boq_model_id');
           finalModels = dbModels
-            .filter((m) => (m.project_id || 'proj-sitak') === project_id)
+            .filter((m) => isProjectMatch(m.project_id, project_id))
             .map((m) => ({
               ...m,
               provisioned_count: (devices || []).filter((d) => d.boq_model_id === m.id).length,
@@ -374,6 +435,14 @@ router.post('/batch', async (req, res) => {
       } catch (err) {
         console.warn('Error fetching fresh Supabase models after batch import:', err.message);
       }
+    }
+
+    // Fallback: If query returned fewer than upserted items, ensure upsertBatch is included
+    if (finalModels.length === 0 && upsertBatch.length > 0) {
+      finalModels = upsertBatch.map((m) => ({
+        ...m,
+        provisioned_count: 0,
+      }));
     }
 
     return res.status(201).json({

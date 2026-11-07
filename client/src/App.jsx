@@ -171,10 +171,13 @@ export default function App() {
     try {
       const targetProjId = activeProject?.id || 'proj-sitak';
       const res = await api.bulkImportBoqModels(importedItems, targetProjId);
-      if (res && res.models) {
+      if (res && res.models && res.models.length > 0) {
         setBoqModels(res.models);
-      } else if (Array.isArray(res)) {
+      } else if (Array.isArray(res) && res.length > 0) {
         setBoqModels(res);
+      } else {
+        const fresh = await api.getBoqModels({ project_id: targetProjId });
+        if (fresh && fresh.length > 0) setBoqModels(fresh);
       }
       return res;
     } catch (err) {
