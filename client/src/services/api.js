@@ -234,5 +234,12 @@ export const api = {
       body: JSON.stringify({ query, device_id }),
     }));
   },
+  async chatInfrastructure(messages = [], query = '', context = {}) {
+    return handleResponse(await fetch(`${API_BASE}/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, query, context }),
+    }));
+  },
 };
 

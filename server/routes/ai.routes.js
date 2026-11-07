@@ -1,5 +1,5 @@
 import express from 'express';
-import { scanDeviceLabel, troubleshootIssue } from '../services/gemini.service.js';
+import { scanDeviceLabel, troubleshootIssue, chatInfrastructureAssistant } from '../services/gemini.service.js';
 import { mockBoqModels, mockDevices, mockCategories } from '../services/mockData.js';
 
 const router = express.Router();
@@ -101,6 +101,22 @@ router.post('/troubleshoot', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/ai/chat
+ * Full Infrastructure Assistant chat endpoint.
+ * Accepts conversation history, latest query, and live project context (devices, boqModels, racks).
+ */
+router.post('/chat', async (req, res) => {
+  try {
+    const { messages = [], query = '', context = {} } = req.body;
+    const result = await chatInfrastructureAssistant({ messages, query, context });
+    res.json(result);
+  } catch (err) {
+    console.error('Error in /api/ai/chat:', err);
+    res.status(500).json({ error: err.message || 'AI Chat request failed' });
   }
 });
 

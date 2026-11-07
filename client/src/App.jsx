@@ -8,6 +8,8 @@ import AiCameraScanner from './components/AiCameraScanner';
 import AiTroubleshooter from './components/AiTroubleshooter';
 import CategoryBuilder from './components/CategoryBuilder';
 import CreateProjectModal from './components/CreateProjectModal';
+import GeminiChatToggle from './components/GeminiChatToggle';
+import { useRacks } from './utils/rackManager';
 import { api } from './services/api';
 
 export default function App() {
@@ -18,6 +20,7 @@ export default function App() {
   const [boqModels, setBoqModels] = useState([]);
   const [devices, setDevices] = useState([]);
   const [floorPlans, setFloorPlans] = useState([]);
+  const { racks } = useRacks();
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
@@ -542,6 +545,17 @@ export default function App() {
         isOpen={isCreateProjectOpen}
         onClose={() => setIsCreateProjectOpen(false)}
         onCreateProject={handleCreateProject}
+        lang={lang}
+      />
+
+      {/* Floating Gemini AI Assistant Toggle & Chat Drawer */}
+      <GeminiChatToggle
+        devices={devices}
+        boqModels={boqModels}
+        racks={racks}
+        categories={categories}
+        floorPlans={floorPlans}
+        activeProject={activeProject}
         lang={lang}
       />
     </div>
