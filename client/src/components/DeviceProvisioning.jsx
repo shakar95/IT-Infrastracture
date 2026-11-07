@@ -78,7 +78,7 @@ export default function DeviceProvisioning({
     rack_unit: '',
     zone: '',
     placement_zone: 'indoor',
-    floor_plan_id: floorPlans[0]?.id || '',
+    floor_plan_id: '',
     installation_status: 'Pending',
     config_backup_url: '',
     notes: '',
@@ -105,9 +105,8 @@ export default function DeviceProvisioning({
   });
 
   const handleOpenNew = () => {
-    const firstModel = boqModels[0];
     setDeviceForm({
-      boq_model_id: firstModel?.id || '',
+      boq_model_id: '',
       custom_label_id: '',
       serial_number: '',
       mac_address: '',
@@ -120,8 +119,8 @@ export default function DeviceProvisioning({
       rack_name: '',
       rack_unit: '',
       zone: '',
-      placement_zone: firstModel?.is_rack_mounted ? 'rack' : firstModel?.allowed_zones?.[0] || 'indoor',
-      floor_plan_id: floorPlans[0]?.id || '',
+      placement_zone: 'indoor',
+      floor_plan_id: '',
       installation_status: 'Pending',
       config_backup_url: '',
       notes: '',
@@ -403,6 +402,16 @@ export default function DeviceProvisioning({
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
+                        {onNavigateToMap && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToMap(dev.floor_plan_id || floorPlans[0]?.id, dev.id)}
+                            title={isKu ? 'پیشاندان و جێگیرکردن لەسەر نەخشە' : 'View / Pin on Map'}
+                            className="p-1.5 text-blue-400 hover:text-white hover:bg-blue-600 rounded-lg transition"
+                          >
+                            <MapPin className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => setInspectingDevice(dev)}
                           title={isKu ? 'پیشاندانی هەموو زانیاری و وێنەی گەورە' : 'Inspect Profile, Map & Photo'}
@@ -464,6 +473,7 @@ export default function DeviceProvisioning({
                   <label className="block text-xs font-medium text-slate-300 mb-1">{t.selectBoqModel}</label>
                   <select
                     value={deviceForm.boq_model_id}
+                    required
                     onChange={(e) => {
                       const sel = boqModels.find((m) => m.id === e.target.value);
                       setDeviceForm({
@@ -475,6 +485,7 @@ export default function DeviceProvisioning({
                     }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                   >
+                    <option value="">{isKu ? '— مۆدێلی ئامێر هەڵبژێرە —' : '— Select BOQ Model —'}</option>
                     {boqModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.brand} {m.model} {m.is_rack_mounted ? '(Rack Unit)' : ''}

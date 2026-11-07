@@ -204,7 +204,7 @@ export default function BoqModelDetailsModal({
 
   // New Provision Form State (English inputs as requested)
   const defaultZone = model.is_rack_mounted ? 'rack' : model.allowed_zones?.[0] || 'indoor';
-  const defaultFloor = floorPlans.find((fp) => fp.zone_type === defaultZone)?.id || floorPlans[0]?.id || '';
+  const defaultFloor = '';
 
   const cleanPrefix = `${model.brand.substring(0, 3).toUpperCase()}-${model.model.replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase()}`;
   const nextNum = String(provisionedCount + 1).padStart(2, '0');

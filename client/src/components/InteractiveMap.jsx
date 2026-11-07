@@ -69,6 +69,8 @@ export default function InteractiveMap({
   const [selectedDevice, setSelectedDevice] = useState(initialSelectedDevice || null);
   const [pingStatus, setPingStatus] = useState(null);
   const [deviceToPlace, setDeviceToPlace] = useState(null);
+  const [isPlacementMode, setIsPlacementMode] = useState(false);
+  const [selectedDeviceToAssign, setSelectedDeviceToAssign] = useState(null);
   const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [isEditPlanModalOpen, setIsEditPlanModalOpen] = useState(false);
@@ -160,6 +162,13 @@ export default function InteractiveMap({
   useEffect(() => {
     if (initialSelectedDevice) {
       setSelectedDevice(initialSelectedDevice);
+      // If arriving to place an unpinned device, engage placement mode directly
+      if (!initialSelectedDevice.floor_plan_id || initialSelectedDevice.pos_x === null) {
+        setDeviceToPlace(initialSelectedDevice);
+        setSelectedDeviceToAssign(initialSelectedDevice);
+        setIsPlacementMode(true);
+        setMobileActiveView('canvas');
+      }
     }
   }, [initialSelectedDevice]);
 
@@ -330,9 +339,13 @@ export default function InteractiveMap({
     if (!isDragging) return;
     setIsDragging(false);
 
-    // If mouse moved less than 5px, treat as click-to-place!
+    // Only open placement if explicitly in placement mode or a device was picked for placement
     if (!hasDraggedSignificantlyRef.current) {
-      handleBlueprintClick(e);
+      if (isPlacementMode || deviceToPlace) {
+        handleBlueprintClick(e);
+      } else {
+        setSelectedDevice(null);
+      }
     }
   };
 
@@ -391,12 +404,16 @@ export default function InteractiveMap({
       setIsDragging(false);
       pinchInitialDistRef.current = 0;
 
-      // Quick tap on blueprint without dragging
+      // Only open placement if explicitly in placement mode or a device was picked for placement
       if (!hasDraggedSignificantlyRef.current && duration < 350) {
-        handleBlueprintClick({
-          clientX: touchStartPosRef.current.x,
-          clientY: touchStartPosRef.current.y,
-        });
+        if (isPlacementMode || deviceToPlace) {
+          handleBlueprintClick({
+            clientX: touchStartPosRef.current.x,
+            clientY: touchStartPosRef.current.y,
+          });
+        } else {
+          setSelectedDevice(null);
+        }
       }
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
@@ -407,7 +424,7 @@ export default function InteractiveMap({
     }
   };
 
-  // Click anywhere on blueprint to open placement dialog (User ALWAYS explicitly chooses/confirms device)
+  // Click anywhere on blueprint in placement mode to open manual placement modal
   const handleBlueprintClick = (e) => {
     if (!blueprintGraphicRef.current || !activePlan) return;
 
@@ -418,10 +435,12 @@ export default function InteractiveMap({
     const clampedX = Math.max(1, Math.min(99, Math.round(rawX * 10) / 10));
     const clampedY = Math.max(1, Math.min(99, Math.round(rawY * 10) / 10));
 
-    // ALWAYS open the popover dialog at this coordinate so the user explicitly chooses or confirms
     setActiveClickCoord({ x: clampedX, y: clampedY });
-    setQuickSearchQuery('');
-    setQuickFilterTab('unplaced');
+    if (deviceToPlace) {
+      setSelectedDeviceToAssign(deviceToPlace);
+    } else if (unpinnedDevices.length > 0) {
+      setSelectedDeviceToAssign(unpinnedDevices[0]);
+    }
   };
 
   const triggerPlacementFlash = (x, y) => {
@@ -431,7 +450,7 @@ export default function InteractiveMap({
 
   // Assign chosen device to active clicked coordinate
   const handleAssignDeviceToCoord = (device) => {
-    if (!activeClickCoord || !activePlan) return;
+    if (!activeClickCoord || !activePlan || !device) return;
 
     onUpdatePosition(device.id, {
       floor_plan_id: activePlan.id,
@@ -442,6 +461,9 @@ export default function InteractiveMap({
     triggerPlacementFlash(activeClickCoord.x, activeClickCoord.y);
     setSelectedDevice(device);
     setActiveClickCoord(null);
+    setDeviceToPlace(null);
+    setSelectedDeviceToAssign(null);
+    setIsPlacementMode(false);
   };
 
   const handleSimulatePing = (ip) => {
@@ -777,14 +799,53 @@ export default function InteractiveMap({
             </div>
 
             {/* Hint & Navigation Tools */}
-            <div className="flex items-center gap-2">
-              {deviceToPlace && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-600/20 border border-blue-500/40 rounded-xl text-xs text-blue-300 animate-pulse">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Manual Device Placement Mode Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !isPlacementMode;
+                  setIsPlacementMode(nextState);
+                  if (nextState) {
+                    setMobileActiveView('canvas');
+                    if (!selectedDeviceToAssign && unpinnedDevices.length > 0) {
+                      setSelectedDeviceToAssign(unpinnedDevices[0]);
+                    }
+                  } else {
+                    setDeviceToPlace(null);
+                    setSelectedDeviceToAssign(null);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
+                  isPlacementMode
+                    ? 'bg-blue-600 text-white ring-2 ring-blue-400 animate-pulse'
+                    : 'bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-white border border-slate-700/80'
+                }`}
+              >
+                <Crosshair className="w-3.5 h-3.5" />
+                <span>
+                  {isPlacementMode
+                    ? (isKu ? 'دۆخی دانان چالاکە' : 'Pin Mode Active')
+                    : (isKu ? '+ پینکردنی ئامێر' : '+ Pin Equipment')}
+                </span>
+              </button>
+
+              {isPlacementMode && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-600/20 border border-blue-500/40 rounded-xl text-xs text-blue-300">
+                  <MapPin className="w-3.5 h-3.5 animate-bounce" />
                   <span>
-                    {isKu ? 'کلیک لە نەخشەکە بکە بۆ جێگیرکردنی:' : 'Click layout to anchor:'}{' '}
-                    <strong>{deviceToPlace.custom_label_id}</strong>
+                    {isKu
+                      ? 'کلیک لەسەر نەخشەکە بکە بۆ دیاریکردنی شوێنی ئامێر'
+                      : 'Click blueprint to anchor pin'}
                   </span>
-                  <button onClick={() => setDeviceToPlace(null)} className="text-blue-400 hover:text-white p-0.5">
+                  <button
+                    onClick={() => {
+                      setIsPlacementMode(false);
+                      setDeviceToPlace(null);
+                      setSelectedDeviceToAssign(null);
+                    }}
+                    className="text-blue-400 hover:text-white p-0.5"
+                  >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1019,177 +1080,135 @@ export default function InteractiveMap({
               </div>
             )}
 
-            {/* Quick Click-to-Place Popover Dialog */}
+            {/* Dedicated Manual Device Placement Modal Dialog */}
             {activeClickCoord && (
               <div
-                className="quick-assign-popover absolute z-50 bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 bg-slate-900/95 backdrop-blur-md border border-blue-500/40 rounded-2xl p-4 shadow-2xl space-y-3 animate-fadeIn"
-                onClick={(e) => e.stopPropagation()}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+                onClick={() => {
+                  setActiveClickCoord(null);
+                  setIsPlacementMode(false);
+                  setDeviceToPlace(null);
+                  setSelectedDeviceToAssign(null);
+                }}
               >
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white">
-                    <Crosshair className="w-4 h-4 text-blue-400" />
-                    <span>{isKu ? 'جێگیرکردنی ئامێر لەم خاڵە' : 'Place Device At This Point'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                      X: {activeClickCoord.x}% Y: {activeClickCoord.y}%
-                    </span>
-                    <button
-                      onClick={() => setActiveClickCoord(null)}
-                      className="text-slate-400 hover:text-white p-0.5 rounded-lg"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Pre-Selected Target Device Card with Clear "Confirm & Pin Here" Action */}
-                {deviceToPlace && (
-                  <div className="p-3 rounded-xl bg-blue-600/15 border border-blue-500/40 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-blue-300 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                        <span>{isKu ? 'ئامێری هەڵبژێردراو بۆ پینکردن:' : 'Target Selected Device:'}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setDeviceToPlace(null)}
-                        className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
-                      >
-                        {isKu ? 'لابردن' : 'Clear'}
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold font-mono text-white truncate">{deviceToPlace.custom_label_id}</p>
-                        <p className="text-[10px] text-slate-400 truncate">
-                          {(() => {
-                            const m = boqModels.find((b) => b.id === deviceToPlace.boq_model_id);
-                            return m ? `${m.brand} ${m.model}` : 'Hardware Item';
-                          })()}
+                <div
+                  className="relative w-full max-w-lg bg-slate-900 border border-blue-500/50 rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/40 shadow-sm shrink-0">
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white tracking-tight">
+                          {isKu ? 'جێگیرکردنی ئامێر بە دەستی (Manual Placement)' : 'Manual Device Placement'}
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          {isKu ? (activePlan.name_ku || activePlan.name) : activePlan.name} • <span className="font-mono text-blue-400 font-bold">X: {activeClickCoord.x}% Y: {activeClickCoord.y}%</span>
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleAssignDeviceToCoord(deviceToPlace);
-                          setDeviceToPlace(null);
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/40 shrink-0 flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>{isKu ? 'پین بکە لێرە' : 'Pin Here'}</span>
-                      </button>
                     </div>
-                  </div>
-                )}
-
-                {/* Search & Tabs */}
-                <div className="space-y-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                    <input
-                      type="text"
-                      value={quickSearchQuery}
-                      onChange={(e) => setQuickSearchQuery(e.target.value)}
-                      placeholder={isKu ? 'گەڕان بەپێی ناوی ئامێر یان مۆدێل...' : 'Search device label or model...'}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80">
                     <button
                       type="button"
-                      onClick={() => setQuickFilterTab('unplaced')}
-                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition ${
-                        quickFilterTab === 'unplaced'
-                          ? 'bg-blue-600 text-white'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
+                      onClick={() => {
+                        setActiveClickCoord(null);
+                        setIsPlacementMode(false);
+                        setDeviceToPlace(null);
+                        setSelectedDeviceToAssign(null);
+                      }}
+                      className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
                     >
-                      {isKu ? 'دانەنراوەکان' : 'Unplaced'} ({unpinnedDevices.length})
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Manual Device Dropdown Picker */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-slate-200">
+                      {isKu ? 'ئەو ئامێرە دیاریبکە کە دەتەوێت لەم خاڵەدا پینی بکەیت:' : 'Choose Equipment to Pin at this Location:'}
+                    </label>
+
+                    <select
+                      value={selectedDeviceToAssign?.id || ''}
+                      onChange={(e) => {
+                        const dev = devices.find((d) => d.id === e.target.value);
+                        setSelectedDeviceToAssign(dev || null);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 focus:border-blue-500 rounded-xl p-3 text-xs text-white focus:outline-none shadow-inner cursor-pointer"
+                    >
+                      <option value="">{isKu ? '— تکایە ئامێرێک هەڵبژێرە —' : '— Select a Device to Pin —'}</option>
+                      {unpinnedDevices.map((d) => {
+                        const m = boqModels.find((b) => b.id === d.boq_model_id);
+                        return (
+                          <option key={d.id} value={d.id}>
+                            {d.custom_label_id} — {m ? `${m.brand} ${m.model}` : 'Hardware'} {d.ip_address ? `• ${d.ip_address}` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Selected Device Preview Card */}
+                  {selectedDeviceToAssign ? (
+                    <div className="p-3.5 bg-slate-950 rounded-xl border border-blue-500/40 space-y-2 animate-fadeIn shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold font-mono text-blue-400">
+                            {selectedDeviceToAssign.custom_label_id}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                          {selectedDeviceToAssign.installation_status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-white font-medium">
+                        {(() => {
+                          const m = boqModels.find((b) => b.id === selectedDeviceToAssign.boq_model_id);
+                          return m ? `${m.brand} ${m.model}` : 'ELV Device';
+                        })()}
+                      </p>
+                      {selectedDeviceToAssign.ip_address && (
+                        <p className="text-[11px] font-mono text-slate-400">
+                          IP: <span className="text-cyan-400">{selectedDeviceToAssign.ip_address}</span>
+                          {selectedDeviceToAssign.switch_name ? ` • ${selectedDeviceToAssign.switch_name} [${selectedDeviceToAssign.switch_port || ''}]` : ''}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center text-xs text-slate-500 italic">
+                      {isKu ? 'تکایە سەرەتا ئامێرێک لە لیستەکەی سەرەوە هەڵبژێرە' : 'Please select an equipment instance from the dropdown above'}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveClickCoord(null);
+                        setIsPlacementMode(false);
+                        setDeviceToPlace(null);
+                        setSelectedDeviceToAssign(null);
+                      }}
+                      className="flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                    >
+                      {isKu ? 'پاشگەزبوونەوە' : 'Cancel'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setQuickFilterTab('all')}
-                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition ${
-                        quickFilterTab === 'all'
-                          ? 'bg-blue-600 text-white'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
+                      disabled={!selectedDeviceToAssign}
+                      onClick={() => {
+                        if (!selectedDeviceToAssign) return;
+                        handleAssignDeviceToCoord(selectedDeviceToAssign);
+                      }}
+                      className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white shadow-lg shadow-blue-900/40 transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      {isKu ? 'هەموو ئامێرەکان' : 'All Devices'} ({devices.length})
+                      <Check className="w-4 h-4" />
+                      <span>{isKu ? 'سەلماندن و پینکردن' : 'Confirm Placement'}</span>
                     </button>
                   </div>
-                </div>
-
-                {/* Filtered Device List */}
-                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-                  {(() => {
-                    const sourceList = quickFilterTab === 'unplaced' ? unpinnedDevices : devices;
-                    const filtered = sourceList.filter((dev) => {
-                      if (!quickSearchQuery) return true;
-                      const q = quickSearchQuery.toLowerCase();
-                      const model = boqModels.find((m) => m.id === dev.boq_model_id);
-                      return (
-                        dev.custom_label_id?.toLowerCase().includes(q) ||
-                        dev.ip_address?.toLowerCase().includes(q) ||
-                        model?.model?.toLowerCase().includes(q) ||
-                        model?.brand?.toLowerCase().includes(q)
-                      );
-                    });
-
-                    if (filtered.length === 0) {
-                      return (
-                        <div className="p-4 text-center text-xs text-slate-500 italic">
-                          {isKu ? 'هیچ ئامێرێک نەدۆزرایەوە' : 'No matching devices found'}
-                        </div>
-                      );
-                    }
-
-                    return filtered.map((dev) => {
-                      const model = boqModels.find((m) => m.id === dev.boq_model_id);
-                      const category = model ? categories.find((c) => c.id === model.category_id) : null;
-                      const DevIcon = getIctDeviceIcon(dev, model, category);
-                      const isAlreadyPinned = dev.floor_plan_id && dev.pos_x !== null;
-
-                      return (
-                        <div
-                          key={dev.id}
-                          onClick={() => handleAssignDeviceToCoord(dev)}
-                          className="p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition flex items-center justify-between gap-2.5 group"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 truncate">
-                            <div className="w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 shadow-sm">
-                              <DevIcon className="w-4 h-4" />
-                            </div>
-                            <div className="truncate min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-white font-mono group-hover:text-blue-400 transition truncate">
-                                  {dev.custom_label_id}
-                                </span>
-                                {isAlreadyPinned && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 font-mono shrink-0">
-                                    {isKu ? 'لەسەر نەخشەیە' : 'Pinned'}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-slate-400 block truncate">
-                                {model ? `${model.brand} ${model.model}` : 'ELV Hardware'} • {dev.ip_address || 'No IP'}
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold shrink-0 shadow transition"
-                          >
-                            {isKu ? 'جێگیرکردن' : 'Pin Here'}
-                          </button>
-                        </div>
-                      );
-                    });
-                  })()}
                 </div>
               </div>
             )}
@@ -1569,7 +1588,17 @@ export default function InteractiveMap({
                       <div
                         key={dev.id}
                         onClick={() => {
-                          setDeviceToPlace(isSelectedForPlacement ? null : dev);
+                          const isTogglingOff = isSelectedForPlacement;
+                          if (isTogglingOff) {
+                            setDeviceToPlace(null);
+                            setSelectedDeviceToAssign(null);
+                            setIsPlacementMode(false);
+                          } else {
+                            setDeviceToPlace(dev);
+                            setSelectedDeviceToAssign(dev);
+                            setIsPlacementMode(true);
+                            setMobileActiveView('canvas');
+                          }
                           setActiveClickCoord(null);
                         }}
                         className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between gap-2.5 ${
