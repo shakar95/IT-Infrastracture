@@ -19,9 +19,12 @@ import {
   ShieldCheck,
   AlertTriangle,
   RefreshCw,
+  FileText,
+  Printer,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
+import { exportTableToPdf, exportReportMessageToPdf } from '../utils/reportPdfExporter';
 
 /**
  * Checks if a string contains Arabic / Kurdish characters
@@ -395,6 +398,25 @@ Feel free to ask me anything about:
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
+                onClick={() => {
+                  const fullSession = messages
+                    .filter((m) => m.role === 'assistant' && !m.isError)
+                    .map((m) => m.content)
+                    .join('\n\n---\n\n');
+                  exportReportMessageToPdf({
+                    messageContent: fullSession,
+                    title: isKu ? 'کۆی گشتی ڕاپۆرتەکانی ئینفراسترەکچەر' : 'Infrastructure AI Reports Log',
+                    projectName: activeProject?.name_ku || activeProject?.name || 'Sitak Villa',
+                    isKu,
+                  });
+                }}
+                title={isKu ? 'داگرتنی تەواوی ڕاپۆرتەکان بە PDF' : 'Export All Reports to PDF'}
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
                 onClick={handleClearChat}
                 title={isKu ? 'پاککردنەوەی مێژووی چات' : 'Clear Chat History'}
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
@@ -542,6 +564,23 @@ Feel free to ask me anything about:
                                   <Download className="w-3 h-3" />
                                   <span>{isKu ? 'داگرتنی ئێکسڵ' : 'Export Excel'}</span>
                                 </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    exportTableToPdf({
+                                      tableData: part.rawData,
+                                      title: isKu ? 'ڕاپۆرتی خشتەی ئینفراسترەکچەر' : 'Infrastructure Table Report',
+                                      projectName: activeProject?.name_ku || activeProject?.name || 'Sitak Villa',
+                                      isKu,
+                                    })
+                                  }
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-sm flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                                  title={isKu ? 'داگرتنی خشتە وەک فایلی PDF' : 'Download / Export Table as PDF'}
+                                >
+                                  <FileText className="w-3 h-3" />
+                                  <span>{isKu ? 'داگرتنی PDF' : 'Export PDF'}</span>
+                                </button>
                               </div>
                             </div>
 
@@ -614,14 +653,35 @@ Feel free to ask me anything about:
                       return null;
                     })}
 
-                    {/* Timestamp & Provider footer */}
+                    {/* Timestamp, Provider & PDF Export footer */}
                     <div
-                      className={`flex items-center justify-between text-[10px] opacity-70 pt-1 font-mono ${
+                      className={`flex items-center justify-between gap-2 text-[10px] opacity-80 pt-2 border-t border-slate-800/80 font-mono ${
                         isMsgRtl ? 'flex-row-reverse' : ''
                       }`}
                     >
-                      <span>{msg.timestamp}</span>
-                      {msg.provider && <span>Engine: {msg.provider}</span>}
+                      <div className="flex items-center gap-1.5">
+                        <span>{msg.timestamp}</span>
+                        {msg.provider && <span className="opacity-70 hidden sm:inline">• {msg.provider}</span>}
+                      </div>
+
+                      {!isUser && !msg.isError && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            exportReportMessageToPdf({
+                              messageContent: msg.content,
+                              title: isKu ? 'ڕاپۆرتی زیرەکی ئینفراسترەکچەر' : 'Infrastructure AI Intelligence Report',
+                              projectName: activeProject?.name_ku || activeProject?.name || 'Sitak Villa',
+                              isKu,
+                            })
+                          }
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                          title={isKu ? 'داگرتنی تەواوی ئەم ڕاپۆرتە بە فایلی PDF' : 'Download full report as PDF'}
+                        >
+                          <FileText className="w-3 h-3 text-rose-400" />
+                          <span>{isKu ? 'ڕاپۆرت بە PDF' : 'Export PDF'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
