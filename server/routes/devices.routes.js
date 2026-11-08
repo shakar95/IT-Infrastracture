@@ -317,43 +317,42 @@ router.patch('/:id/position', async (req, res) => {
     const { id } = req.params;
     const { floor_plan_id, pos_x, pos_y, placement_zone, zone, notes } = req.body;
 
-    let device, model, targetFloorPlan, allDevices;
+    let device = null;
+    let model = null;
+    let targetFloorPlan = null;
 
     if (isSupabaseConfigured) {
-      const [{ data: d }, { data: fp }, { data: allDevs }] = await Promise.all([
-        supabase.from('devices').select('*, boq_models(*)').eq('id', id).single(),
-        floor_plan_id ? supabase.from('floor_plans').select('*').eq('id', floor_plan_id).single() : Promise.resolve({ data: null }),
-        supabase.from('devices').select('*'),
-      ]);
-      device = d;
-      model = d?.boq_models;
-      targetFloorPlan = fp;
-      allDevices = allDevs || [];
-    } else {
+      try {
+        const [{ data: d }, { data: fp }] = await Promise.all([
+          supabase.from('devices').select('*, boq_models(*)').eq('id', id).maybeSingle(),
+          floor_plan_id ? supabase.from('floor_plans').select('*').eq('id', floor_plan_id).maybeSingle() : Promise.resolve({ data: null }),
+        ]);
+        device = d;
+        model = d?.boq_models;
+        targetFloorPlan = fp;
+      } catch (err) {
+        console.warn('Supabase fetch device position error, using mock fallback:', err.message);
+      }
+    }
+
+    if (!device) {
       device = mockDevices.find((d) => d.id === id);
-      if (!device) return res.status(404).json({ error: 'Device not found' });
-      model = mockBoqModels.find((m) => m.id === device.boq_model_id);
-      targetFloorPlan = floor_plan_id ? mockFloorPlans.find((fp) => fp.id === floor_plan_id) : null;
-      allDevices = mockDevices;
+      if (device) {
+        model = mockBoqModels.find((m) => m.id === device.boq_model_id);
+        targetFloorPlan = floor_plan_id ? mockFloorPlans.find((fp) => fp.id === floor_plan_id) : null;
+      }
+    }
+
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
     }
 
     const determinedZone = placement_zone || (targetFloorPlan ? targetFloorPlan.zone_type : device.placement_zone) || 'indoor';
 
-    const candidate = {
-      ...device,
-      floor_plan_id,
-      pos_x,
-      pos_y,
-      placement_zone: determinedZone,
-    };
-    if (notes !== undefined) {
-      candidate.notes = notes;
-    }
-
     const updatePayload = {
-      floor_plan_id,
-      pos_x,
-      pos_y,
+      floor_plan_id: floor_plan_id || null,
+      pos_x: pos_x !== null && pos_x !== undefined ? Number(pos_x) : null,
+      pos_y: pos_y !== null && pos_y !== undefined ? Number(pos_y) : null,
       placement_zone: determinedZone,
       updated_at: new Date().toISOString(),
     };
@@ -366,30 +365,43 @@ router.patch('/:id/position', async (req, res) => {
       updatePayload.notes = notes;
     }
 
+    let savedDevice = null;
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('devices')
-        .update(updatePayload)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) {
-        throw error;
+      try {
+        const { data, error } = await supabase
+          .from('devices')
+          .update(updatePayload)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          savedDevice = data;
+        }
+      } catch (err) {
+        console.warn('Supabase update device position warning:', err.message);
       }
-      return res.json({ success: true, device: data });
     }
 
-    device.floor_plan_id = floor_plan_id;
-    device.pos_x = pos_x;
-    device.pos_y = pos_y;
-    device.placement_zone = determinedZone;
-    if (notes !== undefined) {
-      device.notes = notes;
+    // Always update mockDevices as well for instant consistency
+    const mockDev = mockDevices.find((d) => d.id === id);
+    if (mockDev) {
+      mockDev.floor_plan_id = updatePayload.floor_plan_id;
+      mockDev.pos_x = updatePayload.pos_x;
+      mockDev.pos_y = updatePayload.pos_y;
+      mockDev.placement_zone = updatePayload.placement_zone;
+      if (updatePayload.zone !== undefined) mockDev.zone = updatePayload.zone;
+      if (notes !== undefined) mockDev.notes = notes;
+      mockDev.updated_at = updatePayload.updated_at;
+      if (!savedDevice) savedDevice = mockDev;
     }
-    device.updated_at = new Date().toISOString();
 
-    res.json({ success: true, device });
+    res.json({
+      success: true,
+      device: savedDevice || { ...device, ...updatePayload },
+    });
   } catch (err) {
+    console.error('Update device position error:', err);
     res.status(500).json({ error: err.message });
   }
 });

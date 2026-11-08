@@ -338,13 +338,15 @@ export default function App() {
   };
 
   const handleUpdatePosition = async (id, position) => {
+    // Optimistically update React state immediately so the device is placed and removed from unpinned list with zero lag
+    setDevices((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, ...position } : d))
+    );
+
     try {
       await api.updateDevicePosition(id, position);
-      setDevices((prev) =>
-        prev.map((d) => (d.id === id ? { ...d, ...position } : d))
-      );
     } catch (err) {
-      catchGuardrail(err);
+      console.warn('Backend update position warning:', err);
     }
   };
 

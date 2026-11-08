@@ -158,21 +158,41 @@ export default function InteractiveMap({
     filteredFloorPlans[0] ||
     floorPlans[0];
 
+  // Helper: check if device is pinned at a valid coordinate on a floor plan
+  const isDevicePinned = (d) =>
+    Boolean(d?.floor_plan_id) &&
+    d?.pos_x !== null &&
+    d?.pos_x !== undefined &&
+    d?.pos_x !== '' &&
+    d?.pos_y !== null &&
+    d?.pos_y !== undefined &&
+    d?.pos_y !== '';
+
   // Devices placed on this floor plan
   const pinnedDevices = devices.filter(
-    (d) => d.floor_plan_id === activePlan?.id && d.pos_x !== null && d.pos_y !== null
+    (d) => d.floor_plan_id === activePlan?.id && isDevicePinned(d)
   );
 
-  // Devices not yet placed on this floor plan
-  const unpinnedDevices = devices.filter((d) => !d.floor_plan_id || d.pos_x === null);
+  // Devices not yet placed on any floor plan
+  const unpinnedDevices = devices.filter((d) => !isDevicePinned(d));
+
+  // Helper: check if rack is pinned at a valid coordinate on a floor plan
+  const isRackPinned = (r) =>
+    Boolean(r?.floor_plan_id) &&
+    r?.pos_x !== null &&
+    r?.pos_x !== undefined &&
+    r?.pos_x !== '' &&
+    r?.pos_y !== null &&
+    r?.pos_y !== undefined &&
+    r?.pos_y !== '';
 
   // Server Racks placed on this floor plan
   const pinnedRacks = racks.filter(
-    (r) => r.floor_plan_id === activePlan?.id && r.pos_x !== null && r.pos_y !== null
+    (r) => r.floor_plan_id === activePlan?.id && isRackPinned(r)
   );
 
-  // Server Racks not placed on this floor plan (or unpinned anywhere)
-  const unpinnedRacks = racks.filter((r) => !r.floor_plan_id || r.pos_x === null);
+  // Server Racks not placed on any floor plan
+  const unpinnedRacks = racks.filter((r) => !isRackPinned(r));
 
   // Filtered racks for assignment modal
   const filteredRacksToAssign = unpinnedRacks.filter((rack) => {
@@ -250,7 +270,7 @@ export default function InteractiveMap({
     if (initialSelectedDevice) {
       setSelectedDevice(initialSelectedDevice);
       // If arriving to place an unpinned device, engage placement mode directly
-      if (!initialSelectedDevice.floor_plan_id || initialSelectedDevice.pos_x === null) {
+      if (!isDevicePinned(initialSelectedDevice)) {
         setDeviceToPlace(initialSelectedDevice);
         setSelectedDeviceToAssign(initialSelectedDevice);
         setIsPlacementMode(true);
@@ -781,6 +801,15 @@ export default function InteractiveMap({
   const handleAssignDeviceToCoord = (device) => {
     if (!activeClickCoord || !activePlan || !device) return;
 
+    if (isDevicePinned(device)) {
+      alert(
+        isKu
+          ? 'ئەم ئامێرە پێشتر لەسەر نەخشە پینکراوە! بۆ گۆڕینی شوێنەکەی، دەتوانیت لەسەر نەخشەکە ڕایکێشیت (Drag and Drop).'
+          : 'This device is already pinned on a map! To relocate it, drag its pin on the map.'
+      );
+      return;
+    }
+
     onUpdatePosition(device.id, {
       floor_plan_id: activePlan.id,
       pos_x: activeClickCoord.x,
@@ -788,7 +817,12 @@ export default function InteractiveMap({
     });
 
     triggerPlacementFlash(activeClickCoord.x, activeClickCoord.y);
-    setSelectedDevice(device);
+    setSelectedDevice({
+      ...device,
+      floor_plan_id: activePlan.id,
+      pos_x: activeClickCoord.x,
+      pos_y: activeClickCoord.y,
+    });
     setSelectedRack(null);
     setActiveClickCoord(null);
     setDeviceToPlace(null);
@@ -799,6 +833,15 @@ export default function InteractiveMap({
   // Assign chosen Server Rack to active clicked coordinate
   const handleAssignRackToCoord = (rack) => {
     if (!activeClickCoord || !activePlan || !rack) return;
+
+    if (isRackPinned(rack)) {
+      alert(
+        isKu
+          ? 'ئەم ڕاکە پێشتر لەسەر نەخشە پینکراوە! بۆ گۆڕینی شوێنەکەی، لەسەر نەخشەکە ڕایکێشە (Drag and Drop).'
+          : 'This server rack is already pinned on a map! To relocate it, drag its pin on the map.'
+      );
+      return;
+    }
 
     updateRackPosition(rack.id, {
       floor_plan_id: activePlan.id,
