@@ -29,6 +29,8 @@ import {
   Check,
   Settings2,
   Building2,
+  Shield,
+  Network,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import AddFloorPlanModal from './AddFloorPlanModal';
@@ -41,6 +43,7 @@ import { getIctDeviceIcon } from '../utils/ictIcons';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
 import { useRacks } from '../utils/rackManager';
+import { usePlanTypes, getPlanTypeMeta } from '../utils/planTypeManager';
 import { formatFloorLevel, formatShortFloorLevel } from '../utils/floorLevels';
 
 export default function InteractiveMap({
@@ -63,10 +66,12 @@ export default function InteractiveMap({
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
   const { racks, updateRackPosition, unpinRack } = useRacks();
+  const { planTypes, formatPlanType, getPlanTypeMeta } = usePlanTypes();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
   const [isRackModalOpen, setIsRackModalOpen] = useState(false);
   const [selectedZoneFilter, setSelectedZoneFilter] = useState('all');
+  const [selectedPlanTypeFilter, setSelectedPlanTypeFilter] = useState('all'); // 'all' | 'ICT' | 'Security' | 'AV' | 'BMS'
 
   // 1. All State Hooks
   const [selectedPlanId, setSelectedPlanId] = useState(initialSelectedPlanId || floorPlans[0]?.id || '');
@@ -115,6 +120,8 @@ export default function InteractiveMap({
   const panStartRef = useRef({ x: 0, y: 0 });
   const hasDraggedSignificantlyRef = useRef(false);
   const viewportRef = useRef(null);
+  const activeClickCoordRef = useRef(activeClickCoord);
+  activeClickCoordRef.current = activeClickCoord;
   const blueprintGraphicRef = useRef(null);
   const lastFittedPlanIdRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 });
@@ -123,7 +130,20 @@ export default function InteractiveMap({
   const pinchInitialZoomRef = useRef(1);
 
   // 3. Derived Variables (Available to all functions and effects below)
-  const activePlan = floorPlans.find((fp) => fp.id === selectedPlanId) || floorPlans[0];
+  // Filtered Floor Plans based on Estate Zone AND Plan Type (Discipline)
+  const filteredFloorPlans = floorPlans.filter((fp) => {
+    const matchesZone = selectedZoneFilter === 'all' || fp.zone === selectedZoneFilter;
+    const pType = (fp.plan_type || 'ICT').toLowerCase();
+    const matchesType =
+      selectedPlanTypeFilter === 'all' || pType === selectedPlanTypeFilter.toLowerCase();
+    return matchesZone && matchesType;
+  });
+
+  const activePlan =
+    filteredFloorPlans.find((fp) => fp.id === selectedPlanId) ||
+    floorPlans.find((fp) => fp.id === selectedPlanId) ||
+    filteredFloorPlans[0] ||
+    floorPlans[0];
 
   // Devices placed on this floor plan
   const pinnedDevices = devices.filter(
@@ -226,12 +246,18 @@ export default function InteractiveMap({
     }
   }, [initialSelectedDevice]);
 
-  // Keep selectedPlanId valid if plans change or one is deleted
+  // Keep selectedPlanId valid if plans change, one is deleted, or filter changes
   useEffect(() => {
-    if (!floorPlans.some((fp) => fp.id === selectedPlanId) && floorPlans.length > 0) {
+    if (filteredFloorPlans.length > 0 && !filteredFloorPlans.some((fp) => fp.id === selectedPlanId)) {
+      setSelectedPlanId(filteredFloorPlans[0].id);
+      setSelectedDevice(null);
+      setSelectedRack(null);
+      setDeviceToPlace(null);
+      setActiveClickCoord(null);
+    } else if (!floorPlans.some((fp) => fp.id === selectedPlanId) && floorPlans.length > 0) {
       setSelectedPlanId(floorPlans[0].id);
     }
-  }, [floorPlans, selectedPlanId]);
+  }, [floorPlans, filteredFloorPlans, selectedPlanId]);
 
   // Non-passive wheel handler: Smooth, guaranteed e.preventDefault() to stop page scroll, supports mouse & trackpad
   const handleWheelZoom = useCallback((e) => {
@@ -746,6 +772,56 @@ export default function InteractiveMap({
               <span>{isKu ? '+ نەخشەی نوێ (PDF / وێنە)' : '+ Add Blueprint (PDF / Img)'}</span>
             </button>
 
+            {/* Discipline / Plan Type Filter (All, ICT, Security, AV, BMS) */}
+            <div className="space-y-1.5 pt-1.5 border-t border-slate-800/80">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400 font-semibold">{isKu ? 'سیستەم / جۆری ماپ:' : 'Discipline:'}</span>
+                <span className="font-mono text-[10px] text-blue-400 font-bold">
+                  {selectedPlanTypeFilter === 'all'
+                    ? (isKu ? 'گشت' : 'All')
+                    : selectedPlanTypeFilter}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlanTypeFilter('all')}
+                  className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                    selectedPlanTypeFilter === 'all'
+                      ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/40'
+                      : 'bg-slate-950/70 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <span>{isKu ? 'گشت' : 'All'}</span>
+                  <span className="text-[9px] font-mono opacity-80">({floorPlans.length})</span>
+                </button>
+                {planTypes.map((pt) => {
+                  const isSel = selectedPlanTypeFilter.toLowerCase() === pt.id.toLowerCase();
+                  const count = floorPlans.filter(
+                    (fp) => (fp.plan_type || 'ICT').toLowerCase() === pt.id.toLowerCase()
+                  ).length;
+                  const IconComp = pt.id === 'Security' ? Shield : pt.id === 'AV' ? Tv : pt.id === 'BMS' ? Cpu : Network;
+                  return (
+                    <button
+                      key={pt.id}
+                      type="button"
+                      onClick={() => setSelectedPlanTypeFilter(pt.id)}
+                      className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                        isSel
+                          ? 'text-white shadow-md ring-1 ring-white/30'
+                          : 'bg-slate-950/70 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                      style={isSel ? { backgroundColor: pt.color } : {}}
+                    >
+                      <IconComp className="w-2.5 h-2.5 shrink-0" />
+                      <span>{pt.shortLabel || pt.id}</span>
+                      <span className="text-[9px] font-mono opacity-80">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Quick Estate Zone Filter: All, Main Villa, Guest House, Service Area */}
             <div className="flex items-center gap-1 overflow-x-auto pb-0.5 pt-1">
               <button
@@ -778,19 +854,36 @@ export default function InteractiveMap({
 
           {/* Scrollable Floor Plans List inside Fixed Window */}
           <div className="flex-1 overflow-y-auto space-y-2 pt-3 pr-1 custom-scrollbar">
-            {floorPlans.filter((fp) => selectedZoneFilter === 'all' || fp.zone === selectedZoneFilter).length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-500 italic">
-                {isKu ? 'هیچ نەخشەیەک بەردەست نییە' : 'No floor plans available'}
+            {filteredFloorPlans.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-500 space-y-2.5 px-2">
+                <Shield className="w-8 h-8 text-slate-600 mx-auto stroke-1" />
+                <p className="italic">
+                  {isKu
+                    ? `هیچ نەخشەیەکی ${selectedPlanTypeFilter === 'all' ? '' : selectedPlanTypeFilter} بەردەست نییە`
+                    : `No ${selectedPlanTypeFilter === 'all' ? '' : selectedPlanTypeFilter} floor plans found`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsAddPlanModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>
+                    {isKu
+                      ? `+ زیادکردنی نەخشەی ${selectedPlanTypeFilter !== 'all' ? selectedPlanTypeFilter : ''}`
+                      : `+ Add ${selectedPlanTypeFilter !== 'all' ? selectedPlanTypeFilter : ''} Blueprint`}
+                  </span>
+                </button>
               </div>
             ) : (
-              floorPlans
-                .filter((fp) => selectedZoneFilter === 'all' || fp.zone === selectedZoneFilter)
-                .map((fp) => {
+              filteredFloorPlans.map((fp) => {
                 const isActive = fp.id === activePlan?.id;
                 const planDeviceCount = devices.filter((d) => d.floor_plan_id === fp.id).length;
                 const zoneBadgeClass = isActive
                   ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                   : 'bg-slate-800 text-slate-400 border-slate-700/60';
+                const ptMeta = getPlanTypeMeta(fp.plan_type || 'ICT');
+                const TypeIcon = ptMeta.id === 'Security' ? Shield : ptMeta.id === 'AV' ? Tv : ptMeta.id === 'BMS' ? Cpu : Network;
 
                 return (
                   <div
@@ -823,6 +916,19 @@ export default function InteractiveMap({
                           </p>
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                          {/* Plan Type Discipline Badge */}
+                          <span
+                            className="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold border shrink-0 inline-flex items-center gap-1"
+                            style={{
+                              backgroundColor: `${ptMeta.color}15`,
+                              color: ptMeta.color,
+                              borderColor: `${ptMeta.color}35`,
+                            }}
+                          >
+                            <TypeIcon className="w-2.5 h-2.5" />
+                            <span>{ptMeta.shortLabel || fp.plan_type || 'ICT'}</span>
+                          </span>
+
                           {fp.floor_level !== undefined && fp.floor_level !== null && (
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/40 inline-flex items-center gap-1 shrink-0">
                               <Layers className="w-2.5 h-2.5 text-blue-400" />
@@ -905,8 +1011,9 @@ export default function InteractiveMap({
         }`}>
           {/* Mobile & iPad Quick Floor Plan Pill Selector */}
           <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x">
-            {floorPlans.map((fp) => {
+            {filteredFloorPlans.map((fp) => {
               const isAct = fp.id === activePlan?.id;
+              const ptMeta = getPlanTypeMeta(fp.plan_type || 'ICT');
               return (
                 <button
                   key={fp.id}
@@ -922,8 +1029,14 @@ export default function InteractiveMap({
                       : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isAct ? 'bg-white' : 'bg-slate-500'}`} />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: isAct ? '#ffffff' : ptMeta.color }}
+                  />
                   <span>{isKu ? (fp.name_ku || fp.name) : fp.name}</span>
+                  <span className="text-[9px] font-mono opacity-80 font-bold px-1 rounded bg-black/30">
+                    {ptMeta.shortLabel || fp.plan_type || 'ICT'}
+                  </span>
                   {fp.floor_level !== undefined && fp.floor_level !== null && (
                     <span className="text-[10px] font-mono opacity-80">
                       ({formatShortFloorLevel(fp.floor_level, lang)})
@@ -943,11 +1056,31 @@ export default function InteractiveMap({
 
           {/* Controls Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-2xl shadow-md">
-            <div className="flex items-center gap-2.5 text-xs text-slate-300">
+            <div className="flex items-center gap-2.5 text-xs text-slate-300 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
               <span className="font-semibold text-white">
                 {activePlan ? (isKu ? (activePlan.name_ku || activePlan.name) : activePlan.name) : 'No Plan Selected'}
               </span>
+
+              {/* Active Plan Discipline Badge */}
+              {activePlan && (() => {
+                const ptMeta = getPlanTypeMeta(activePlan.plan_type || 'ICT');
+                const TypeIcon = ptMeta.id === 'Security' ? Shield : ptMeta.id === 'AV' ? Tv : ptMeta.id === 'BMS' ? Cpu : Network;
+                return (
+                  <span
+                    className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold font-mono border inline-flex items-center gap-1 shadow-sm"
+                    style={{
+                      backgroundColor: `${ptMeta.color}20`,
+                      color: ptMeta.color,
+                      borderColor: `${ptMeta.color}40`,
+                    }}
+                  >
+                    <TypeIcon className="w-3 h-3" />
+                    <span>{ptMeta.shortLabel || activePlan.plan_type || 'ICT'}</span>
+                  </span>
+                );
+              })()}
+
               {activePlan?.floor_level !== undefined && activePlan?.floor_level !== null && (
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">
                   {formatFloorLevel(activePlan.floor_level, lang)}
@@ -2032,6 +2165,7 @@ export default function InteractiveMap({
         isOpen={isAddPlanModalOpen}
         onClose={() => setIsAddPlanModalOpen(false)}
         onCreateFloorPlan={onCreateFloorPlan}
+        defaultPlanType={selectedPlanTypeFilter !== 'all' ? selectedPlanTypeFilter : 'ICT'}
         onFloorPlanCreated={(newPlan) => {
           if (newPlan?.id) {
             setSelectedPlanId(newPlan.id);
@@ -2326,23 +2460,17 @@ export default function InteractiveMap({
                                   </div>
                                 </div>
 
-                                {/* Right: Quick Action Button */}
-                                <div className="shrink-0 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAssignDeviceToCoord(dev);
-                                    }}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                                {/* Right: Selection Indicator */}
+                                <div className="shrink-0 flex items-center pr-1">
+                                  <div
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
                                       isSelected
-                                        ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/40'
-                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
+                                        ? 'bg-blue-600 text-white shadow-md shadow-blue-900/50 ring-2 ring-blue-400/50'
+                                        : 'border-2 border-slate-700 bg-slate-900/60 text-transparent group-hover:border-slate-500'
                                     }`}
                                   >
-                                    <MapPin className="w-3.5 h-3.5" />
-                                    <span>{isKu ? 'پین بکە' : 'Pin Here'}</span>
-                                  </button>
+                                    <Check className={`w-3.5 h-3.5 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -2489,23 +2617,17 @@ export default function InteractiveMap({
                                   </div>
                                 </div>
 
-                                {/* Right: Quick Action Button */}
-                                <div className="shrink-0 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAssignRackToCoord(rack);
-                                    }}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                                {/* Right: Selection Indicator */}
+                                <div className="shrink-0 flex items-center pr-1">
+                                  <div
+                                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
                                       isSelected
-                                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/40'
-                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
+                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/50 ring-2 ring-indigo-400/50'
+                                        : 'border-2 border-slate-700 bg-slate-900/60 text-transparent group-hover:border-slate-500'
                                     }`}
                                   >
-                                    <MapPin className="w-3.5 h-3.5" />
-                                    <span>{isKu ? 'پین بکە' : 'Pin Rack Here'}</span>
-                                  </button>
+                                    <Check className={`w-3.5 h-3.5 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                                  </div>
                                 </div>
                               </div>
                             );

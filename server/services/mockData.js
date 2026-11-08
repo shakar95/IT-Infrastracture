@@ -322,6 +322,7 @@ export let mockFloorPlans = [
     name_ku: 'نهۆمی زەمینی - هۆڵی میوان و تەراسەکان',
     zone: 'main_villa',
     zone_type: 'indoor',
+    plan_type: 'ICT',
     floor_level: 0,
     image_url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200',
     scale_meters_per_pixel: 0.05,
@@ -332,6 +333,7 @@ export let mockFloorPlans = [
     name_ku: 'نهۆمی یەکەم - ژوورەکانی نوستن و ماستەر سوییت',
     zone: 'main_villa',
     zone_type: 'indoor',
+    plan_type: 'ICT',
     floor_level: 1,
     image_url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
     scale_meters_per_pixel: 0.05,
@@ -342,6 +344,7 @@ export let mockFloorPlans = [
     name_ku: 'نهۆمی ژێرزەمین - سپا و سینەمای تایبەت',
     zone: 'main_villa',
     zone_type: 'indoor',
+    plan_type: 'ICT',
     floor_level: -1,
     image_url: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1200',
     scale_meters_per_pixel: 0.05,
@@ -352,6 +355,7 @@ export let mockFloorPlans = [
     name_ku: 'ژووری سێرڤەری سەرەکی - ڕاکەکانی کۆنتڕۆڵ',
     zone: 'service_area',
     zone_type: 'rack',
+    plan_type: 'ICT',
     floor_level: 0,
     image_url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200',
     scale_meters_per_pixel: 0.02,
@@ -362,6 +366,7 @@ export let mockFloorPlans = [
     name_ku: 'حەوشەی ڤێلا، باخچە و دەروازەی سەرەکی',
     zone: 'guest_house',
     zone_type: 'outdoor',
+    plan_type: 'ICT',
     floor_level: 0,
     image_url: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
     scale_meters_per_pixel: 0.1,
@@ -601,6 +606,7 @@ mockDevices.forEach((d) => {
 });
 mockFloorPlans.forEach((fp) => {
   if (!fp.project_id) fp.project_id = 'proj-sitak';
+  if (!fp.plan_type) fp.plan_type = 'ICT';
 });
 
 // Initial Baseline Version for Sitak Villa

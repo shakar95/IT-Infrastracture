@@ -17,11 +17,23 @@ router.get('/', async (req, res) => {
 
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.from('floor_plans').select('*').order('floor_level');
-      if (!error && data) return res.json(data);
+      if (!error && data) {
+        // Ensure plan_type defaults to 'ICT' if not set
+        const populated = data.map((fp) => ({
+          ...fp,
+          plan_type: fp.plan_type || 'ICT',
+        }));
+        return res.json(populated);
+      }
     }
 
     // In-memory filter - Strictly scoped to targetProject
-    const filtered = mockFloorPlans.filter((fp) => (fp.project_id || 'proj-sitak') === targetProject);
+    const filtered = mockFloorPlans
+      .filter((fp) => (fp.project_id || 'proj-sitak') === targetProject)
+      .map((fp) => ({
+        ...fp,
+        plan_type: fp.plan_type || 'ICT',
+      }));
     res.json(filtered);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -149,7 +161,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 // POST add new floor plan
 router.post('/', async (req, res) => {
   try {
-    const { name, name_ku, zone, zone_type, floor_level, image_url, scale_meters_per_pixel = 0.05 } = req.body;
+    const { name, name_ku, zone, zone_type, plan_type, floor_level, image_url, scale_meters_per_pixel = 0.05 } = req.body;
 
     if (!name || !image_url) {
       return res.status(400).json({ error: 'Floor plan name and image URL are required.' });
@@ -161,6 +173,7 @@ router.post('/', async (req, res) => {
       name_ku: name_ku || name,
       zone: zone || null,
       zone_type: zone_type || null,
+      plan_type: plan_type || 'ICT',
       floor_level:
         floor_level !== undefined && floor_level !== null && floor_level !== ''
           ? Number(floor_level)
@@ -177,10 +190,10 @@ router.post('/', async (req, res) => {
         .select()
         .single();
 
-      // Graceful fallback if floor_plans table does not yet have 'zone' or 'project_id' column in Supabase schema cache
-      if (error && (error.message?.includes('zone') || error.message?.includes('project_id') || error.code === 'PGRST204')) {
+      // Graceful fallback if floor_plans table does not yet have 'plan_type', 'zone' or 'project_id' column in Supabase schema cache
+      if (error && (error.message?.includes('plan_type') || error.message?.includes('zone') || error.message?.includes('project_id') || error.code === 'PGRST204')) {
         console.warn('Supabase floor_plans missing column, retrying insert with standard columns...');
-        const { zone: _z, project_id: _p, ...cleanPayload } = planPayload;
+        const { plan_type: _pt, zone: _z, project_id: _p, ...cleanPayload } = planPayload;
         const retryResult = await supabase
           .from('floor_plans')
           .insert([cleanPayload])
@@ -214,7 +227,7 @@ router.post('/', async (req, res) => {
       }
 
       if (error) throw error;
-      return res.status(201).json(data);
+      return res.status(201).json({ ...data, plan_type: planPayload.plan_type || 'ICT' });
     }
 
     const newPlan = {
@@ -231,17 +244,18 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT update floor plan (Name, Kurdish Name, Zone, Floor Level, Blueprint Image)
+// PUT update floor plan (Name, Kurdish Name, Zone, Floor Level, Plan Type, Blueprint Image)
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, name_ku, zone, zone_type, floor_level, image_url, scale_meters_per_pixel } = req.body;
+    const { name, name_ku, zone, zone_type, plan_type, floor_level, image_url, scale_meters_per_pixel } = req.body;
 
     const updatePayload = {};
     if (name !== undefined) updatePayload.name = name;
     if (name_ku !== undefined) updatePayload.name_ku = name_ku;
     if (zone !== undefined) updatePayload.zone = zone || null;
     if (zone_type !== undefined) updatePayload.zone_type = zone_type || null;
+    if (plan_type !== undefined) updatePayload.plan_type = plan_type || 'ICT';
     if (floor_level !== undefined) {
       updatePayload.floor_level =
         floor_level !== null && floor_level !== '' && floor_level !== undefined
@@ -258,6 +272,20 @@ router.put('/:id', async (req, res) => {
         .eq('id', id)
         .select()
         .single();
+
+      // Graceful fallback if database schema doesn't yet have 'plan_type' column
+      if (error && (error.message?.includes('plan_type') || error.code === 'PGRST204')) {
+        console.warn('Supabase floor_plans missing plan_type, retrying update without plan_type...');
+        const { plan_type: _pt, ...cleanPayload } = updatePayload;
+        const retryUpdate = await supabase
+          .from('floor_plans')
+          .update(cleanPayload)
+          .eq('id', id)
+          .select()
+          .single();
+        data = retryUpdate.data;
+        error = retryUpdate.error;
+      }
 
       // Graceful fallback if database schema enforces NOT NULL or enum on zone_type or floor_level
       if (
@@ -282,7 +310,7 @@ router.put('/:id', async (req, res) => {
       }
 
       if (error) throw error;
-      return res.json(data);
+      return res.json({ ...data, plan_type: updatePayload.plan_type || data?.plan_type || 'ICT' });
     }
 
     const idx = mockFloorPlans.findIndex((fp) => fp.id === id);

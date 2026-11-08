@@ -16,10 +16,15 @@ import {
   Trash2,
   Settings2,
   Building2,
+  Shield,
+  Network,
+  Tv,
+  Cpu,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
+import { usePlanTypes } from '../utils/planTypeManager';
 import ZoneEditorModal from './ZoneEditorModal';
 import EstateZoneEditorModal from './EstateZoneEditorModal';
 import { ensurePdfJs, renderPdfToHighResPng } from '../utils/pdfEngine';
@@ -61,6 +66,7 @@ export default function AddFloorPlanModal({
   isOpen,
   onClose,
   planToEdit = null,
+  defaultPlanType = 'ICT',
   onFloorPlanCreated,
   onCreateFloorPlan,
   onUpdateFloorPlan,
@@ -70,6 +76,7 @@ export default function AddFloorPlanModal({
   const isKu = lang === 'ku';
   const { zones } = useZones();
   const { estateZones } = useEstateZones();
+  const { planTypes, formatPlanType } = usePlanTypes();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);
 
@@ -77,6 +84,7 @@ export default function AddFloorPlanModal({
   const [nameKu, setNameKu] = useState('');
   const [zone, setZone] = useState('');
   const [zoneType, setZoneType] = useState('');
+  const [planType, setPlanType] = useState(defaultPlanType || 'ICT');
   const [floorLevel, setFloorLevel] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [imagePreview, setImagePreview] = useState('');
@@ -96,6 +104,7 @@ export default function AddFloorPlanModal({
       setNameKu(planToEdit.name_ku || planToEdit.name || '');
       setZone(planToEdit.zone || '');
       setZoneType(planToEdit.zone_type || '');
+      setPlanType(planToEdit.plan_type || 'ICT');
       setFloorLevel(
         planToEdit.floor_level !== undefined && planToEdit.floor_level !== null
           ? planToEdit.floor_level
@@ -113,6 +122,7 @@ export default function AddFloorPlanModal({
       setNameKu('');
       setZone('');
       setZoneType('');
+      setPlanType(defaultPlanType || 'ICT');
       setFloorLevel('');
       setImageUrl('');
       setImagePreview('');
@@ -122,7 +132,7 @@ export default function AddFloorPlanModal({
       setFileMeta(null);
       setDwgNotice(false);
     }
-  }, [planToEdit, isOpen]);
+  }, [planToEdit, isOpen, defaultPlanType]);
 
   if (!isOpen) return null;
 
@@ -253,6 +263,7 @@ export default function AddFloorPlanModal({
         name_ku: nameKu.trim() || name.trim(),
         zone: zone || null,
         zone_type: zoneType || null,
+        plan_type: planType || 'ICT',
         floor_level:
           floorLevel !== '' && floorLevel !== null && floorLevel !== undefined
             ? Number(floorLevel)
@@ -481,6 +492,67 @@ export default function AddFloorPlanModal({
                 placeholder="وەک: نەخشەی قاتی زەمینی سیستەمی ELV"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
               />
+            </div>
+          </div>
+
+          {/* Plan Discipline / Type (ICT, Security, AV, BMS) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Network className="w-3.5 h-3.5 text-blue-400" />
+                <span>{isKu ? 'جۆری نەخشە و سیستەم (Discipline)' : 'Plan Type & Discipline'}</span>
+              </label>
+              <span className="text-[10px] text-blue-400 font-mono">
+                {isKu ? 'ماپی جیاکراوە بۆ هەر جۆرێک' : 'Dedicated map per discipline'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {planTypes.map((pt) => {
+                const isSelected = (planType || 'ICT') === pt.id;
+                const IconComp = pt.id === 'Security' ? Shield : pt.id === 'AV' ? Tv : pt.id === 'BMS' ? Cpu : Network;
+                return (
+                  <button
+                    key={pt.id}
+                    type="button"
+                    onClick={() => setPlanType(pt.id)}
+                    className={`p-2.5 rounded-2xl border text-left transition-all duration-150 flex flex-col justify-between gap-2 relative cursor-pointer ${
+                      isSelected
+                        ? 'bg-slate-900 border-blue-500 ring-2 ring-blue-500/40 shadow-lg'
+                        : 'bg-slate-950/70 hover:bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                    style={isSelected ? { borderColor: pt.color } : {}}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-inner"
+                        style={{
+                          backgroundColor: `${pt.color}20`,
+                          color: pt.color,
+                          border: `1px solid ${pt.color}40`,
+                        }}
+                      >
+                        <IconComp className="w-3.5 h-3.5" />
+                      </div>
+                      {isSelected && (
+                        <span
+                          className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold shadow"
+                          style={{ backgroundColor: pt.color }}
+                        >
+                          <Check className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white truncate font-mono">
+                        {pt.shortLabel || pt.id}
+                      </p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {isKu ? pt.labelKu : pt.label}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

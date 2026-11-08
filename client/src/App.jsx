@@ -84,7 +84,7 @@ export default function App() {
 
       setBoqModels(boqs || []);
       setDevices(devs || []);
-      setFloorPlans(maps || []);
+      setFloorPlans((maps || []).map((p) => ({ ...p, plan_type: p.plan_type || 'ICT' })));
     } catch (err) {
       console.error('Failed to load project infrastructure data:', err);
     } finally {
@@ -103,7 +103,7 @@ export default function App() {
       ]);
       setBoqModels(boqs || []);
       setDevices(devs || []);
-      setFloorPlans(maps || []);
+      setFloorPlans((maps || []).map((p) => ({ ...p, plan_type: p.plan_type || 'ICT' })));
     } catch (err) {
       console.error('Failed to load project data:', err);
     } finally {
@@ -369,8 +369,12 @@ export default function App() {
         ...planData,
         project_id: planData.project_id || activeProject?.id || 'proj-sitak',
       });
-      setFloorPlans((prev) => [...prev, created]);
-      return created;
+      const withType = {
+        ...created,
+        plan_type: created.plan_type || planData.plan_type || 'ICT',
+      };
+      setFloorPlans((prev) => [...prev, withType]);
+      return withType;
     } catch (err) {
       alert(err.message || 'Failed to create floor plan');
       throw err;
@@ -380,8 +384,12 @@ export default function App() {
   const handleUpdateFloorPlan = async (id, updatedData) => {
     try {
       const updated = await api.updateFloorPlan(id, updatedData);
-      setFloorPlans((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
-      return updated;
+      const withType = {
+        ...updated,
+        plan_type: updated.plan_type || updatedData.plan_type || 'ICT',
+      };
+      setFloorPlans((prev) => prev.map((p) => (p.id === id ? { ...p, ...withType } : p)));
+      return withType;
     } catch (err) {
       alert(err.message || 'Failed to update floor plan');
       throw err;
