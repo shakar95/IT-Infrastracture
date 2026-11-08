@@ -343,7 +343,7 @@ export default function InteractiveMap({
         ...selectedDevice,
         placement_zone: newZone || null,
         rack_name: isRack
-          ? (selectedDevice.rack_name || racks[0]?.name || 'Main 42U Server Rack A')
+          ? (selectedDevice.rack_name || racks[0]?.name || 'IDF01')
           : selectedDevice.rack_name,
       };
       if (onUpdateDevice) {
@@ -356,7 +356,7 @@ export default function InteractiveMap({
           ? {
               ...prev,
               placement_zone: newZone || null,
-              rack_name: isRack ? (prev.rack_name || racks[0]?.name || 'Main 42U Server Rack A') : prev.rack_name,
+              rack_name: isRack ? (prev.rack_name || racks[0]?.name || 'IDF01') : prev.rack_name,
             }
           : prev
       );

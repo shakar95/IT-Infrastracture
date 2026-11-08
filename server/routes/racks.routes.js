@@ -22,54 +22,78 @@ try {
 
 export const INITIAL_DEFAULT_RACKS = [
   {
-    id: 'main_rack_a',
-    name: 'Main 42U Server Rack A',
-    nameKu: 'ڕاکی سەرەکی 42U سێرڤەر A',
+    id: 'idf01',
+    name: 'IDF01',
+    nameKu: 'IDF01',
     totalUnits: 42,
     zone: 'main_villa',
     location: 'Main Server Room (Basement -1)',
-    isSystem: true,
+    isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
   {
-    id: 'guest_rack',
-    name: 'Guest House 24U Network Rack',
-    nameKu: 'ڕاکی خانەی میوان 24U تۆڕ',
-    totalUnits: 24,
-    zone: 'guest_house',
-    location: 'Guest House IT Closet',
-    isSystem: true,
-    floor_plan_id: null,
-    pos_x: null,
-    pos_y: null,
-  },
-  {
-    id: 'service_rack',
-    name: 'Service Area 18U MDF Rack',
-    nameKu: 'ڕاکی ناوچەی خزمەتگوزاری 18U',
-    totalUnits: 18,
+    id: 'idf02',
+    name: 'IDF02',
+    nameKu: 'IDF02',
+    totalUnits: 42,
     zone: 'service_area',
     location: 'Service Block Tech Room',
-    isSystem: true,
+    isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
   {
-    id: 'gate_cabinet',
-    name: 'Security Gate 12U Wall Cabinet',
-    nameKu: 'کابینەی ئاسایش و دەروازە 12U',
-    totalUnits: 12,
+    id: 'idf03',
+    name: 'IDF03',
+    nameKu: 'IDF03',
+    totalUnits: 42,
+    zone: 'guest_house',
+    location: 'Guest House Basement',
+    isSystem: false,
+    floor_plan_id: '27ccd09c-e168-4a2b-b80f-b5586853171b',
+    pos_x: 44.6,
+    pos_y: 47.3,
+  },
+  {
+    id: 'idf04',
+    name: 'IDF04',
+    nameKu: 'IDF04',
+    totalUnits: 42,
     zone: 'security_gate',
-    location: 'Security Office',
+    location: 'Security Gate Tech Cabinet',
     isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
 ];
+
+const LEGACY_DUMMY_IDS = new Set([
+  'main_rack_a',
+  'guest_rack',
+  'service_rack',
+  'gate_cabinet',
+  'main_42u_rack_a',
+]);
+
+export function isLegacyDummyRack(r) {
+  if (!r) return true;
+  if (LEGACY_DUMMY_IDS.has(r.id?.toLowerCase())) return true;
+  const n = (r.name || '').toLowerCase().trim();
+  if (
+    n === 'main 42u server rack a' ||
+    n === 'guest house 24u network rack' ||
+    n === 'service area 18u mdf rack' ||
+    n === 'security gate 12u wall cabinet' ||
+    n === 'main 42u rack a'
+  ) {
+    return true;
+  }
+  return false;
+}
 
 // Helper: Read stored racks from File, Supabase, or Mock
 async function readStoredRacks() {
@@ -110,7 +134,12 @@ async function readStoredRacks() {
     racks = mockProjectSettings.network_defaults.racks;
   }
 
-  // Fallback to initial defaults
+  // Purge any legacy dummy racks
+  if (Array.isArray(racks)) {
+    racks = racks.filter((r) => !isLegacyDummyRack(r));
+  }
+
+  // Fallback to initial defaults (IDF01, IDF02, IDF03, IDF04)
   if (!Array.isArray(racks) || racks.length === 0) {
     racks = [...INITIAL_DEFAULT_RACKS];
   }
@@ -133,6 +162,7 @@ async function readStoredRacks() {
     deviceRacks.forEach((dev) => {
       const rName = dev.rack_name?.trim();
       if (!rName) return;
+      if (isLegacyDummyRack({ name: rName, id: rName })) return;
       const exists = racks.some(
         (r) =>
           r.name?.toLowerCase() === rName.toLowerCase() ||
@@ -229,6 +259,7 @@ router.post('/sync', async (req, res) => {
     if (Array.isArray(clientRacks) && clientRacks.length > 0) {
       clientRacks.forEach((cRack) => {
         if (!cRack || !cRack.name) return;
+        if (isLegacyDummyRack(cRack)) return;
         const existingIdx = currentRacks.findIndex(
           (r) =>
             r.id === cRack.id ||

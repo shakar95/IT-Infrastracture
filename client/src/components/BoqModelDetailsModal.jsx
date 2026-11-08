@@ -411,7 +411,7 @@ export default function BoqModelDetailsModal({
         vlan_id: form.vlan_id ? Number(form.vlan_id) : 10,
         switch_name: form.switch_name.trim() || null,
         switch_port: form.switch_port.trim() || null,
-        rack_name: form.placement_zone === 'rack' ? (form.rack_name?.trim() || racks[0]?.name || 'Main 42U Server Rack A') : (form.rack_name?.trim() || null),
+        rack_name: form.placement_zone === 'rack' ? (form.rack_name?.trim() || racks[0]?.name || 'IDF01') : (form.rack_name?.trim() || null),
         rack_unit: form.placement_zone === 'rack' ? (form.rack_unit?.trim() || 'U1') : (form.rack_unit?.trim() || null),
         placement_zone: form.placement_zone || defaultZone,
         floor_plan_id: form.floor_plan_id || null,

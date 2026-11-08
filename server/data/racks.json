@@ -1,0 +1,50 @@
+[
+  {
+    "id": "idf01",
+    "name": "IDF01",
+    "nameKu": "IDF01",
+    "totalUnits": 42,
+    "zone": "main_villa",
+    "location": "Main Server Room (Basement -1)",
+    "isSystem": false,
+    "floor_plan_id": null,
+    "pos_x": null,
+    "pos_y": null
+  },
+  {
+    "id": "idf02",
+    "name": "IDF02",
+    "nameKu": "IDF02",
+    "totalUnits": 42,
+    "zone": "service_area",
+    "location": "Service Block Tech Room",
+    "isSystem": false,
+    "floor_plan_id": null,
+    "pos_x": null,
+    "pos_y": null
+  },
+  {
+    "id": "idf03",
+    "name": "IDF03",
+    "nameKu": "IDF03",
+    "totalUnits": 42,
+    "zone": "guest_house",
+    "location": "Guest House Basement",
+    "isSystem": false,
+    "floor_plan_id": "27ccd09c-e168-4a2b-b80f-b5586853171b",
+    "pos_x": 44.6,
+    "pos_y": 47.3
+  },
+  {
+    "id": "idf04",
+    "name": "IDF04",
+    "nameKu": "IDF04",
+    "totalUnits": 42,
+    "zone": "security_gate",
+    "location": "Security Gate Tech Cabinet",
+    "isSystem": false,
+    "floor_plan_id": null,
+    "pos_x": null,
+    "pos_y": null
+  }
+]

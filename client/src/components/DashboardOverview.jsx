@@ -117,7 +117,7 @@ export default function DashboardOverview({
       title: t.rackUnitsOccupied,
       value: `${rackDevicesCount}`,
       unit: isKu ? 'یەکە (U)' : 'Units',
-      sub: isKu ? 'ژووری سێرڤەری سەرەکی ڤێلا' : 'Main 42U Server Rack A (Sitak)',
+      sub: isKu ? 'ژووری سێرڤەری سەرەکی ڤێلا' : 'IDF01 (Main Server Room)',
       icon: Server,
       color: 'from-cyan-500 to-blue-500',
       tab: 'map',

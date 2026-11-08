@@ -500,7 +500,7 @@ export default function DeviceProvisioning({
                         ...deviceForm,
                         boq_model_id: e.target.value,
                         placement_zone: sel?.is_rack_mounted ? 'rack' : deviceForm.placement_zone,
-                        rack_name: sel?.is_rack_mounted ? (deviceForm.rack_name || racks[0]?.name || 'Main 42U Server Rack A') : deviceForm.rack_name,
+                        rack_name: sel?.is_rack_mounted ? (deviceForm.rack_name || racks[0]?.name || 'IDF01') : deviceForm.rack_name,
                       });
                     }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
@@ -692,7 +692,7 @@ export default function DeviceProvisioning({
                           ...deviceForm,
                           placement_zone: newZone,
                           rack_name: newZone === 'rack'
-                            ? (deviceForm.rack_name || racks[0]?.name || 'Main 42U Server Rack A')
+                            ? (deviceForm.rack_name || racks[0]?.name || 'IDF01')
                             : deviceForm.rack_name,
                         });
                       }

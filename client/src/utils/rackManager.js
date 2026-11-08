@@ -9,54 +9,78 @@ import { api } from '../services/api';
 
 export const DEFAULT_RACKS = [
   {
-    id: 'main_rack_a',
-    name: 'Main 42U Server Rack A',
-    nameKu: 'ڕاکی سەرەکی 42U سێرڤەر A',
+    id: 'idf01',
+    name: 'IDF01',
+    nameKu: 'IDF01',
     totalUnits: 42,
     zone: 'main_villa',
     location: 'Main Server Room (Basement -1)',
-    isSystem: true,
+    isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
   {
-    id: 'guest_rack',
-    name: 'Guest House 24U Network Rack',
-    nameKu: 'ڕاکی خانەی میوان 24U تۆڕ',
-    totalUnits: 24,
-    zone: 'guest_house',
-    location: 'Guest House IT Closet',
-    isSystem: true,
-    floor_plan_id: null,
-    pos_x: null,
-    pos_y: null,
-  },
-  {
-    id: 'service_rack',
-    name: 'Service Area 18U MDF Rack',
-    nameKu: 'ڕاکی ناوچەی خزمەتگوزاری 18U',
-    totalUnits: 18,
+    id: 'idf02',
+    name: 'IDF02',
+    nameKu: 'IDF02',
+    totalUnits: 42,
     zone: 'service_area',
     location: 'Service Block Tech Room',
-    isSystem: true,
+    isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
   {
-    id: 'gate_cabinet',
-    name: 'Security Gate 12U Wall Cabinet',
-    nameKu: 'کابینەی ئاسایش و دەروازە 12U',
-    totalUnits: 12,
+    id: 'idf03',
+    name: 'IDF03',
+    nameKu: 'IDF03',
+    totalUnits: 42,
+    zone: 'guest_house',
+    location: 'Guest House Basement',
+    isSystem: false,
+    floor_plan_id: '27ccd09c-e168-4a2b-b80f-b5586853171b',
+    pos_x: 44.6,
+    pos_y: 47.3,
+  },
+  {
+    id: 'idf04',
+    name: 'IDF04',
+    nameKu: 'IDF04',
+    totalUnits: 42,
     zone: 'security_gate',
-    location: 'Security Office',
+    location: 'Security Gate Tech Cabinet',
     isSystem: false,
     floor_plan_id: null,
     pos_x: null,
     pos_y: null,
   },
 ];
+
+const LEGACY_DUMMY_IDS = new Set([
+  'main_rack_a',
+  'guest_rack',
+  'service_rack',
+  'gate_cabinet',
+  'main_42u_rack_a',
+]);
+
+export function isLegacyDummyRack(r) {
+  if (!r) return true;
+  if (LEGACY_DUMMY_IDS.has(r.id?.toLowerCase())) return true;
+  const n = (r.name || '').toLowerCase().trim();
+  if (
+    n === 'main 42u server rack a' ||
+    n === 'guest house 24u network rack' ||
+    n === 'service area 18u mdf rack' ||
+    n === 'security gate 12u wall cabinet' ||
+    n === 'main 42u rack a'
+  ) {
+    return true;
+  }
+  return false;
+}
 
 const STORAGE_KEY = 'it_infrastructure_racks_v1';
 const EVENT_NAME = 'it_racks_updated';
@@ -68,7 +92,14 @@ export function getStoredRacks() {
     if (!raw) return DEFAULT_RACKS;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_RACKS;
-    return parsed;
+
+    // Filter out old legacy dummy racks
+    const clean = parsed.filter((r) => !isLegacyDummyRack(r));
+    if (clean.length === 0) return DEFAULT_RACKS;
+    if (clean.length !== parsed.length) {
+      saveStoredRacks(clean, false);
+    }
+    return clean;
   } catch (err) {
     console.warn('Failed to parse stored racks, reverting to defaults:', err);
     return DEFAULT_RACKS;
@@ -78,9 +109,10 @@ export function getStoredRacks() {
 export function saveStoredRacks(racks, emitEvent = true) {
   if (typeof window === 'undefined' || !Array.isArray(racks)) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(racks));
+    const cleanRacks = racks.filter((r) => !isLegacyDummyRack(r));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanRacks));
     if (emitEvent) {
-      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: racks }));
+      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: cleanRacks }));
     }
   } catch (err) {
     console.error('Failed to save racks to localStorage:', err);
@@ -92,39 +124,41 @@ export function saveStoredRacks(racks, emitEvent = true) {
  */
 export function mergeRacks(newRacks = []) {
   if (!Array.isArray(newRacks) || newRacks.length === 0) return getStoredRacks();
-  const current = getStoredRacks();
+  const current = getStoredRacks().filter((r) => !isLegacyDummyRack(r));
   let changed = false;
   const merged = [...current];
 
-  newRacks.forEach((nR) => {
-    if (!nR || !nR.name) return;
-    const idx = merged.findIndex(
-      (r) =>
-        r.id === nR.id ||
-        r.name?.toLowerCase() === nR.name?.toLowerCase() ||
-        (r.nameKu && nR.nameKu && r.nameKu?.toLowerCase() === nR.nameKu?.toLowerCase())
-    );
+  newRacks
+    .filter((nR) => !isLegacyDummyRack(nR))
+    .forEach((nR) => {
+      if (!nR || !nR.name) return;
+      const idx = merged.findIndex(
+        (r) =>
+          r.id === nR.id ||
+          r.name?.toLowerCase() === nR.name?.toLowerCase() ||
+          (r.nameKu && nR.nameKu && r.nameKu?.toLowerCase() === nR.nameKu?.toLowerCase())
+      );
 
-    if (idx !== -1) {
-      // Update missing fields
-      const existing = merged[idx];
-      const updatedItem = {
-        ...existing,
-        ...nR,
-        // preserve coordinates if not present in new
-        pos_x: nR.pos_x !== undefined && nR.pos_x !== null ? nR.pos_x : existing.pos_x,
-        pos_y: nR.pos_y !== undefined && nR.pos_y !== null ? nR.pos_y : existing.pos_y,
-        floor_plan_id: nR.floor_plan_id !== undefined && nR.floor_plan_id !== null ? nR.floor_plan_id : existing.floor_plan_id,
-      };
-      if (JSON.stringify(existing) !== JSON.stringify(updatedItem)) {
-        merged[idx] = updatedItem;
+      if (idx !== -1) {
+        // Update missing fields
+        const existing = merged[idx];
+        const updatedItem = {
+          ...existing,
+          ...nR,
+          // preserve coordinates if not present in new
+          pos_x: nR.pos_x !== undefined && nR.pos_x !== null ? nR.pos_x : existing.pos_x,
+          pos_y: nR.pos_y !== undefined && nR.pos_y !== null ? nR.pos_y : existing.pos_y,
+          floor_plan_id: nR.floor_plan_id !== undefined && nR.floor_plan_id !== null ? nR.floor_plan_id : existing.floor_plan_id,
+        };
+        if (JSON.stringify(existing) !== JSON.stringify(updatedItem)) {
+          merged[idx] = updatedItem;
+          changed = true;
+        }
+      } else {
+        merged.push(nR);
         changed = true;
       }
-    } else {
-      merged.push(nR);
-      changed = true;
-    }
-  });
+    });
 
   if (changed) {
     saveStoredRacks(merged);
@@ -137,13 +171,14 @@ export function mergeRacks(newRacks = []) {
  */
 export function syncRacksWithDevices(devicesList = []) {
   if (!Array.isArray(devicesList) || devicesList.length === 0) return getStoredRacks();
-  const current = getStoredRacks();
+  const current = getStoredRacks().filter((r) => !isLegacyDummyRack(r));
   let changed = false;
   const updated = [...current];
 
   devicesList.forEach((d) => {
     const rName = d?.rack_name?.trim();
     if (!rName) return;
+    if (isLegacyDummyRack({ name: rName, id: rName })) return;
 
     const exists = updated.some(
       (r) =>
