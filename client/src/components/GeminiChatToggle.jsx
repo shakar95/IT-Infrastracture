@@ -23,6 +23,53 @@ import {
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
 
+/**
+ * Checks if a string contains Arabic / Kurdish characters
+ */
+export const isRtlText = (text) => {
+  if (!text || typeof text !== 'string') return false;
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+};
+
+/**
+ * Authentic Google Gemini Sparkle Star Logo
+ */
+export function GeminiSparkleLogo({ className = "w-6 h-6", animated = false }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} ${animated ? 'animate-spin-slow' : ''}`}
+    >
+      <defs>
+        <linearGradient id="gemini-star-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4E88FF" />
+          <stop offset="35%" stopColor="#8E55FF" />
+          <stop offset="70%" stopColor="#FF60A8" />
+          <stop offset="100%" stopColor="#FFC857" />
+        </linearGradient>
+        <radialGradient id="gemini-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
+          <stop offset="50%" stopColor="#8E55FF" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#4E88FF" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="12" cy="12" r="10" fill="url(#gemini-glow)" opacity="0.3" />
+      <path
+        d="M12 2C12 7.523 7.523 12 2 12C7.523 12 12 16.477 12 22C12 16.477 16.477 12 22 12C16.477 12 12 7.523 12 2Z"
+        fill="url(#gemini-star-grad)"
+      />
+      <path
+        d="M19 3C19 4.38 17.88 5.5 16.5 5.5C17.88 5.5 19 6.62 19 8C19 6.62 20.12 5.5 21.5 5.5C20.12 5.5 19 4.38 19 3Z"
+        fill="#FFD269"
+        opacity="0.95"
+      />
+      <circle cx="12" cy="12" r="1.8" fill="#FFFFFF" fillOpacity="0.95" />
+    </svg>
+  );
+}
+
 export default function GeminiChatToggle({
   devices = [],
   boqModels = [],
@@ -267,42 +314,39 @@ Feel free to ask me anything about:
 
   return (
     <>
-      {/* 1. Global Floating Gemini AI Toggle Button */}
-      <div className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40 animate-bounce-subtle">
+      {/* 1. Global Floating Gemini AI Toggle Button - Compact Gemini Logo Only */}
+      <div className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40">
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className={`group relative flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl transition-all duration-300 active:scale-95 cursor-pointer ${
+          className={`group relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300 active:scale-90 cursor-pointer ${
             isOpen
-              ? 'bg-slate-900 border-2 border-indigo-500 text-white shadow-indigo-950/80 ring-4 ring-indigo-500/20'
-              : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-indigo-900/50 hover:shadow-indigo-600/40 hover:scale-105 ring-2 ring-indigo-400/40'
+              ? 'bg-slate-900 border-2 border-indigo-400 text-white shadow-indigo-950/80 ring-4 ring-indigo-500/30'
+              : 'bg-gradient-to-tr from-slate-950 via-slate-900 to-indigo-950/90 border border-indigo-500/50 hover:border-indigo-400 text-white shadow-indigo-950/60 hover:shadow-indigo-500/40 hover:scale-110 ring-2 ring-indigo-500/20'
           }`}
-          title={isKu ? 'چاتی زیرەکی Gemini AI بۆ ئینفراسترەکچەر' : 'Toggle Gemini Infrastructure AI Chat'}
+          title={isKu ? 'چاتی زیرەکی Gemini AI' : 'Gemini Infrastructure AI'}
+          aria-label="Toggle Gemini AI"
         >
           {/* Subtle Outer Glowing Ripple */}
           {!isOpen && (
-            <span className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 opacity-30 group-hover:opacity-60 blur-md transition duration-500 animate-pulse pointer-events-none" />
+            <span className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-600 opacity-40 group-hover:opacity-80 blur-md transition duration-500 animate-pulse pointer-events-none" />
           )}
 
-          {/* AI Icon */}
-          <div className="relative w-7 h-7 rounded-xl bg-white/15 flex items-center justify-center shrink-0 shadow-inner">
-            <Sparkles className="w-4 h-4 text-amber-300 animate-spin-slow" />
+          {/* Gemini Sparkling Star Logo */}
+          <div className="relative flex items-center justify-center transition-transform duration-300 group-hover:scale-110">
+            {isOpen ? (
+              <X className="w-5 h-5 text-indigo-300 transition-transform duration-300 group-hover:rotate-90" />
+            ) : (
+              <GeminiSparkleLogo className="w-7 h-7 sm:w-8 sm:h-8" />
+            )}
           </div>
 
-          <div className="text-left hidden sm:block">
-            <div className="flex items-center gap-1.5 leading-none">
-              <span className="text-xs font-extrabold tracking-wide font-sans">Gemini AI</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            </div>
-            <span className="text-[10px] text-indigo-200/90 font-medium leading-none block mt-1">
-              {isKu ? 'پرسیار و تەیبڵ ڕاپۆرت' : 'Infrastructure Q&A & Tables'}
+          {/* Online green indicator badge */}
+          {!isOpen && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-slate-900" />
             </span>
-          </div>
-
-          {isOpen ? (
-            <ChevronDown className="w-4 h-4 text-slate-300 ml-1" />
-          ) : (
-            <span className="sm:hidden text-xs font-bold font-sans">AI</span>
           )}
         </button>
       </div>
@@ -320,17 +364,20 @@ Feel free to ask me anything about:
           }}
         >
           {/* Chat Window Top Header */}
-          <div className="px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
+          <div
+            dir={isKu ? 'rtl' : 'ltr'}
+            className="px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0"
+          >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-900/50 shrink-0">
-                <Bot className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-slate-900 via-indigo-950 to-purple-950 border border-indigo-500/40 flex items-center justify-center text-white shadow-lg shadow-indigo-900/50 shrink-0">
+                <GeminiSparkleLogo className="w-6 h-6" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-1.5 truncate">
                     <span>Gemini Infrastructure AI</span>
                     <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                      RAG 1.5
+                      2.5 Flash
                     </span>
                   </h3>
                 </div>
@@ -339,7 +386,7 @@ Feel free to ask me anything about:
                   <span>•</span>
                   <span className="text-indigo-400 font-semibold">{racks.length} {isKu ? 'ڕاک' : 'racks'}</span>
                   <span>•</span>
-                  <span className="text-emerald-400 font-semibold">{activeProject?.name || 'Sitak Villa'}</span>
+                  <span className="text-emerald-400 font-semibold">{activeProject?.name_ku || activeProject?.name || 'Sitak Villa'}</span>
                 </div>
               </div>
             </div>
@@ -374,7 +421,10 @@ Feel free to ask me anything about:
           </div>
 
           {/* Quick Suggested Queries Chips Bar */}
-          <div className="px-3.5 py-2 bg-slate-950/60 border-b border-slate-800/80 shrink-0 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+          <div
+            dir={isKu ? 'rtl' : 'ltr'}
+            className="px-3.5 py-2 bg-slate-950/60 border-b border-slate-800/80 shrink-0 overflow-x-auto no-scrollbar flex items-center gap-1.5"
+          >
             {quickPrompts.map((qp, idx) => (
               <button
                 key={idx}
@@ -393,6 +443,7 @@ Feel free to ask me anything about:
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
               const parsedParts = parseMarkdownTables(msg.content);
+              const isMsgRtl = isRtlText(msg.content);
 
               return (
                 <div
@@ -406,29 +457,34 @@ Feel free to ask me anything about:
                     className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-md ${
                       isUser
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gradient-to-tr from-indigo-600 to-purple-600 text-white ring-2 ring-indigo-500/30'
+                        : 'bg-gradient-to-tr from-slate-900 via-indigo-950 to-purple-950 border border-indigo-500/40 text-white ring-2 ring-indigo-500/20'
                     }`}
                   >
-                    {isUser ? <Cpu className="w-4 h-4" /> : <Sparkles className="w-4 h-4 text-amber-300" />}
+                    {isUser ? <Cpu className="w-4 h-4" /> : <GeminiSparkleLogo className="w-4 h-4" />}
                   </div>
 
                   {/* Bubble */}
                   <div
+                    dir={isMsgRtl ? 'rtl' : 'ltr'}
                     className={`max-w-[88%] sm:max-w-[82%] rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed space-y-3 ${
                       isUser
                         ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-900/20'
                         : msg.isError
                         ? 'bg-red-950/50 border border-red-800 text-red-200 rounded-tl-none'
                         : 'bg-slate-950/80 border border-slate-800/90 text-slate-200 rounded-tl-none shadow-md'
-                    }`}
+                    } ${isMsgRtl ? 'text-right' : 'text-left'}`}
                   >
                     {/* Render message parts: text + rich tables */}
                     {parsedParts.map((part, pIdx) => {
                       if (part.type === 'text') {
+                        const isPartRtl = isRtlText(part.content);
                         return (
                           <div
                             key={pIdx}
-                            className="whitespace-pre-line leading-relaxed break-words font-sans"
+                            dir={isPartRtl ? 'rtl' : 'ltr'}
+                            className={`whitespace-pre-line leading-relaxed break-words font-sans ${
+                              isPartRtl ? 'text-right' : 'text-left'
+                            }`}
                           >
                             {part.content}
                           </div>
@@ -438,14 +494,19 @@ Feel free to ask me anything about:
                       if (part.type === 'table') {
                         const copyKey = `table-${msg.id}-${pIdx}`;
                         const isCopied = copiedId === copyKey;
+                        const isTableRtl = part.headers.some(isRtlText) || part.rows.some((r) => r.some(isRtlText)) || isKu;
 
                         return (
                           <div
                             key={pIdx}
+                            dir={isTableRtl ? 'rtl' : 'ltr'}
                             className="my-3 rounded-2xl border border-indigo-500/40 bg-slate-900 overflow-hidden shadow-xl"
                           >
                             {/* Table Action Bar */}
-                            <div className="px-3 py-2 bg-slate-950/90 border-b border-indigo-500/30 flex items-center justify-between gap-2 flex-wrap">
+                            <div
+                              dir={isTableRtl ? 'rtl' : 'ltr'}
+                              className={`px-3 py-2 bg-slate-950/90 border-b border-indigo-500/30 flex items-center justify-between gap-2 flex-wrap`}
+                            >
                               <span className="text-[11px] font-bold font-mono text-indigo-300 flex items-center gap-1.5">
                                 <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-400" />
                                 <span>{isKu ? 'تەیبڵی داتای ئینفراسترەکچەر' : 'Infrastructure Data Table'}</span>
@@ -486,11 +547,17 @@ Feel free to ask me anything about:
 
                             {/* Responsive Table Body */}
                             <div className="overflow-x-auto max-h-[340px] custom-scrollbar">
-                              <table className="w-full text-left border-collapse text-[11px]">
+                              <table
+                                className={`w-full border-collapse text-[11px] ${isTableRtl ? 'text-right' : 'text-left'}`}
+                                dir={isTableRtl ? 'rtl' : 'ltr'}
+                              >
                                 <thead>
                                   <tr className="bg-slate-950/90 border-b border-indigo-500/20 text-indigo-300 font-mono font-bold">
                                     {part.headers.map((h, hIdx) => (
-                                      <th key={hIdx} className="px-3 py-2 whitespace-nowrap">
+                                      <th
+                                        key={hIdx}
+                                        className={`px-3 py-2 whitespace-nowrap ${isTableRtl ? 'text-right' : 'text-left'}`}
+                                      >
                                         {h}
                                       </th>
                                     ))}
@@ -509,7 +576,7 @@ Feel free to ask me anything about:
                                         return (
                                           <td
                                             key={cIdx}
-                                            className={`px-3 py-2 whitespace-nowrap ${
+                                            className={`px-3 py-2 whitespace-nowrap ${isTableRtl ? 'text-right' : 'text-left'} ${
                                               cIdx === 1 ? 'font-mono font-bold text-white' : 'text-slate-300'
                                             }`}
                                           >
@@ -548,7 +615,11 @@ Feel free to ask me anything about:
                     })}
 
                     {/* Timestamp & Provider footer */}
-                    <div className="flex items-center justify-between text-[10px] opacity-70 pt-1 font-mono">
+                    <div
+                      className={`flex items-center justify-between text-[10px] opacity-70 pt-1 font-mono ${
+                        isMsgRtl ? 'flex-row-reverse' : ''
+                      }`}
+                    >
                       <span>{msg.timestamp}</span>
                       {msg.provider && <span>Engine: {msg.provider}</span>}
                     </div>
@@ -559,11 +630,17 @@ Feel free to ask me anything about:
 
             {/* Typing / Loading state */}
             {isLoading && (
-              <div className="flex items-center gap-3 animate-fadeIn">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shrink-0">
-                  <RefreshCw className="w-4 h-4 text-amber-300 animate-spin" />
+              <div
+                dir={isKu ? 'rtl' : 'ltr'}
+                className="flex items-center gap-3 animate-fadeIn"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-slate-900 via-indigo-950 to-purple-950 border border-indigo-500/40 flex items-center justify-center text-white shrink-0">
+                  <GeminiSparkleLogo className="w-4 h-4 animate-spin-slow" />
                 </div>
-                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-indigo-500/30 text-xs text-indigo-300 font-mono flex items-center gap-2">
+                <div
+                  dir={isKu ? 'rtl' : 'ltr'}
+                  className="p-3.5 rounded-2xl bg-slate-950/90 border border-indigo-500/30 text-xs text-indigo-300 font-mono flex items-center gap-2"
+                >
                   <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
                   <span>{isKu ? 'جێمینی سەرقاڵی شیکاری تۆڕ و دروستکردنی تەیبڵە...' : 'Gemini AI is analyzing topology & synthesizing table...'}</span>
                 </div>
@@ -587,6 +664,7 @@ Feel free to ask me anything about:
                   ref={inputRef}
                   rows={2}
                   value={inputText}
+                  dir={isRtlText(inputText) ? 'rtl' : 'auto'}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -599,10 +677,16 @@ Feel free to ask me anything about:
                       ? 'پرسیارێک بنووسە یان داوای دروستکردنی تەیبڵ بکە (بۆ نموونە: تەیبڵی هەموو کامێراکانم بۆ دەربهێنە)...'
                       : 'Ask about devices, topology, or request custom table reports...'
                   }
-                  className="w-full bg-transparent text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none resize-none leading-relaxed"
+                  className={`w-full bg-transparent text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none resize-none leading-relaxed ${
+                    isRtlText(inputText) || (isKu && !inputText.trim()) ? 'text-right' : 'text-left'
+                  }`}
                 />
-                <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono">
-                  <span>Enter to send • Shift+Enter for newline</span>
+                <div
+                  className={`flex items-center justify-between pt-1 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono ${
+                    isRtlText(inputText) || isKu ? 'flex-row-reverse' : ''
+                  }`}
+                >
+                  <span>{isKu ? 'Enter بۆ ناردن • Shift+Enter بۆ دێڕی نوێ' : 'Enter to send • Shift+Enter for newline'}</span>
                   <span className="text-indigo-400 font-semibold">{inputText.length} chars</span>
                 </div>
               </div>
@@ -613,7 +697,7 @@ Feel free to ask me anything about:
                 className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-40 text-white shadow-lg shadow-indigo-900/40 transition active:scale-95 cursor-pointer shrink-0"
                 title={isKu ? 'ناردنی پرسیار' : 'Send message'}
               >
-                <Send className="w-4 h-4" />
+                <Send className={`w-4 h-4 ${isRtlText(inputText) || isKu ? 'rotate-180' : ''}`} />
               </button>
             </form>
           </div>

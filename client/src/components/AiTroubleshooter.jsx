@@ -166,9 +166,12 @@ export default function AiTroubleshooter({
           <div className="relative">
             <textarea
               value={query}
+              dir={/[\u0600-\u06FF]/.test(query) ? 'rtl' : 'auto'}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.queryPlaceholder}
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 h-28 resize-none"
+              className={`w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 h-28 resize-none ${
+                /[\u0600-\u06FF]/.test(query) ? 'text-right' : 'text-left'
+              }`}
             />
           </div>
 
@@ -176,7 +179,7 @@ export default function AiTroubleshooter({
             <button
               onClick={() => handleRunTroubleshoot()}
               disabled={isLoading || !query.trim()}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-lg shadow-indigo-900/40 transition active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-lg shadow-indigo-900/40 transition active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -196,7 +199,12 @@ export default function AiTroubleshooter({
 
       {/* AI Diagnostic Solution Display */}
       {solutionResult && (
-        <div className="p-6 bg-slate-900 border border-indigo-500/40 rounded-3xl shadow-2xl space-y-4 animate-fadeIn">
+        <div
+          dir={/[\u0600-\u06FF]/.test(solutionResult.solution) ? 'rtl' : 'ltr'}
+          className={`p-6 bg-slate-900 border border-indigo-500/40 rounded-3xl shadow-2xl space-y-4 animate-fadeIn ${
+            /[\u0600-\u06FF]/.test(solutionResult.solution) ? 'text-right' : 'text-left'
+          }`}
+        >
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-indigo-400" />
