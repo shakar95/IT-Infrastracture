@@ -493,3 +493,4 @@ export function exportReportMessageToPdf({
 
   openPdfPrintWindow(fullHtml, title.replace(/\s+/g, '_'));
 }
+
