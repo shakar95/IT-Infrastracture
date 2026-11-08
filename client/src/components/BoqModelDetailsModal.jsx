@@ -103,7 +103,7 @@ export default function BoqModelDetailsModal({
   const modelDevices = devices.filter((d) => d.boq_model_id === model.id);
   const provisionedCount = modelDevices.length;
 
-  const { racks } = useRacks();
+  const { racks } = useRacks(devices);
   const [isRackModalOpen, setIsRackModalOpen] = useState(false);
 
   // Active Tab inside modal: 'details' | 'provision' | 'instances' | 'barcode' | 'edit'

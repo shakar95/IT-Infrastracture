@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 /**
  * Rack & Cabinet Management Utility
  * Manages Server Racks, Network Cabinets, and AV Racks across the Sitak Villa project
+ * Supports auto-sync with Backend API & auto-discovery from Device rack names
  */
 
 export const DEFAULT_RACKS = [
@@ -73,14 +75,107 @@ export function getStoredRacks() {
   }
 }
 
-export function saveStoredRacks(racks) {
-  if (typeof window === 'undefined') return;
+export function saveStoredRacks(racks, emitEvent = true) {
+  if (typeof window === 'undefined' || !Array.isArray(racks)) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(racks));
-    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: racks }));
+    if (emitEvent) {
+      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: racks }));
+    }
   } catch (err) {
     console.error('Failed to save racks to localStorage:', err);
   }
+}
+
+/**
+ * Merge an array of racks into storage without losing existing items or coordinates
+ */
+export function mergeRacks(newRacks = []) {
+  if (!Array.isArray(newRacks) || newRacks.length === 0) return getStoredRacks();
+  const current = getStoredRacks();
+  let changed = false;
+  const merged = [...current];
+
+  newRacks.forEach((nR) => {
+    if (!nR || !nR.name) return;
+    const idx = merged.findIndex(
+      (r) =>
+        r.id === nR.id ||
+        r.name?.toLowerCase() === nR.name?.toLowerCase() ||
+        (r.nameKu && nR.nameKu && r.nameKu?.toLowerCase() === nR.nameKu?.toLowerCase())
+    );
+
+    if (idx !== -1) {
+      // Update missing fields
+      const existing = merged[idx];
+      const updatedItem = {
+        ...existing,
+        ...nR,
+        // preserve coordinates if not present in new
+        pos_x: nR.pos_x !== undefined && nR.pos_x !== null ? nR.pos_x : existing.pos_x,
+        pos_y: nR.pos_y !== undefined && nR.pos_y !== null ? nR.pos_y : existing.pos_y,
+        floor_plan_id: nR.floor_plan_id !== undefined && nR.floor_plan_id !== null ? nR.floor_plan_id : existing.floor_plan_id,
+      };
+      if (JSON.stringify(existing) !== JSON.stringify(updatedItem)) {
+        merged[idx] = updatedItem;
+        changed = true;
+      }
+    } else {
+      merged.push(nR);
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    saveStoredRacks(merged);
+  }
+  return merged;
+}
+
+/**
+ * Auto-discover racks from devices list
+ */
+export function syncRacksWithDevices(devicesList = []) {
+  if (!Array.isArray(devicesList) || devicesList.length === 0) return getStoredRacks();
+  const current = getStoredRacks();
+  let changed = false;
+  const updated = [...current];
+
+  devicesList.forEach((d) => {
+    const rName = d?.rack_name?.trim();
+    if (!rName) return;
+
+    const exists = updated.some(
+      (r) =>
+        r.name?.toLowerCase() === rName.toLowerCase() ||
+        r.id?.toLowerCase() === rName.toLowerCase() ||
+        (r.nameKu && r.nameKu?.toLowerCase() === rName.toLowerCase())
+    );
+
+    if (!exists) {
+      const cleanId = rName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `rack_${Date.now()}`;
+      updated.push({
+        id: cleanId,
+        name: rName,
+        nameKu: rName,
+        totalUnits: 42,
+        zone: d.zone || 'main_villa',
+        location: d.zone ? `Zone: ${d.zone}` : 'Server Rack',
+        isSystem: false,
+        floor_plan_id: d.floor_plan_id || null,
+        pos_x: d.pos_x || null,
+        pos_y: d.pos_y || null,
+      });
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    saveStoredRacks(updated);
+    // Background sync to server
+    api.syncRacks(updated).catch(() => {});
+  }
+  return updated;
 }
 
 export function addRack(name, nameKu, totalUnits = 42, zone = 'main_villa', location = '') {
@@ -114,14 +209,22 @@ export function addRack(name, nameKu, totalUnits = 42, zone = 'main_villa', loca
 
   const updated = [...current, newRack];
   saveStoredRacks(updated);
+
+  // Sync with server
+  api.createRack(newRack).catch((err) => {
+    console.warn('Backend rack create sync warning:', err);
+    api.syncRacks(updated).catch(() => {});
+  });
+
   return newRack;
 }
 
 export function updateRack(id, updates = {}) {
   const current = getStoredRacks();
+  let updatedRack = null;
   const updated = current.map((r) => {
     if (r.id === id) {
-      return {
+      updatedRack = {
         ...r,
         name: updates.name !== undefined ? (updates.name.trim() || r.name) : r.name,
         nameKu: updates.nameKu !== undefined ? (updates.nameKu.trim() || r.nameKu || r.name) : r.nameKu,
@@ -132,10 +235,19 @@ export function updateRack(id, updates = {}) {
         pos_x: updates.pos_x !== undefined ? updates.pos_x : (r.pos_x ?? null),
         pos_y: updates.pos_y !== undefined ? updates.pos_y : (r.pos_y ?? null),
       };
+      return updatedRack;
     }
     return r;
   });
   saveStoredRacks(updated);
+
+  // Sync with server
+  if (updatedRack) {
+    api.updateRack(id, updates).catch((err) => {
+      console.warn('Backend rack update sync warning:', err);
+    });
+  }
+
   return updated;
 }
 
@@ -153,6 +265,12 @@ export function updateRackPosition(id, { floor_plan_id = null, pos_x = null, pos
     return r;
   });
   saveStoredRacks(updated);
+
+  // Sync with server
+  api.updateRack(id, { floor_plan_id, pos_x, pos_y }).catch((err) => {
+    console.warn('Backend rack position update warning:', err);
+  });
+
   return updated;
 }
 
@@ -164,6 +282,12 @@ export function deleteRack(id) {
   const current = getStoredRacks();
   const updated = current.filter((r) => r.id !== id);
   saveStoredRacks(updated);
+
+  // Sync with server
+  api.deleteRack(id).catch((err) => {
+    console.warn('Backend rack delete warning:', err);
+  });
+
   return updated;
 }
 
@@ -175,8 +299,8 @@ export function formatRack(rackIdOrName, lang = 'en') {
   const match = racks.find(
     (r) =>
       r.id === rackIdOrName ||
-      r.name.toLowerCase() === rackIdOrName.toLowerCase() ||
-      (r.nameKu && r.nameKu.toLowerCase() === rackIdOrName.toLowerCase())
+      r.name?.toLowerCase() === rackIdOrName.toLowerCase() ||
+      (r.nameKu && r.nameKu?.toLowerCase() === rackIdOrName.toLowerCase())
   );
 
   if (match) {
@@ -187,11 +311,54 @@ export function formatRack(rackIdOrName, lang = 'en') {
 }
 
 /**
- * React hook to listen to reactive updates for racks
+ * React hook to listen to reactive updates for racks and sync across server / devices
  */
-export function useRacks() {
+export function useRacks(passedDevices = []) {
   const [racks, setRacks] = useState(() => getStoredRacks());
 
+  // 1. Initial background server sync & upload
+  useEffect(() => {
+    let isMounted = true;
+
+    async function syncWithServer() {
+      try {
+        const local = getStoredRacks();
+        // Send our local racks to merge with server, and get back latest merged racks
+        const res = await api.syncRacks(local);
+        if (isMounted && res && Array.isArray(res.racks) && res.racks.length > 0) {
+          mergeRacks(res.racks);
+          setRacks(getStoredRacks());
+        }
+      } catch (err) {
+        // Fallback: try simple GET
+        try {
+          const srvRacks = await api.getRacks();
+          if (isMounted && Array.isArray(srvRacks) && srvRacks.length > 0) {
+            mergeRacks(srvRacks);
+            setRacks(getStoredRacks());
+          }
+        } catch (e) {
+          // Offline or network error: use local storage
+        }
+      }
+    }
+
+    syncWithServer();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Auto-discover from passedDevices whenever devices are loaded/updated
+  useEffect(() => {
+    if (Array.isArray(passedDevices) && passedDevices.length > 0) {
+      syncRacksWithDevices(passedDevices);
+      setRacks(getStoredRacks());
+    }
+  }, [passedDevices]);
+
+  // 3. Listen to local events & cross-tab storage events
   useEffect(() => {
     const handleUpdate = (e) => {
       if (e.detail) {
@@ -219,4 +386,3 @@ export function useRacks() {
     formatRack: (id, lang) => formatRack(id, lang),
   };
 }
-

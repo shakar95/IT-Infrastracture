@@ -17,7 +17,7 @@ const RACK_UNIT_PRESETS = [48, 45, 42, 36, 24, 18, 15, 12, 9, 6, 4];
 
 export default function RackManagerModal({ isOpen, onClose, devices = [], lang = 'ku' }) {
   const isKu = lang === 'ku';
-  const { racks, addRack, updateRack, deleteRack } = useRacks();
+  const { racks, addRack, updateRack, deleteRack } = useRacks(devices);
   const { estateZones, formatEstateZone } = useEstateZones();
 
   const [newNameEn, setNewNameEn] = useState('');

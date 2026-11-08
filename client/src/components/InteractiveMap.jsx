@@ -65,7 +65,7 @@ export default function InteractiveMap({
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
-  const { racks, updateRackPosition, unpinRack } = useRacks();
+  const { racks, updateRackPosition, unpinRack } = useRacks(devices);
   const { planTypes, formatPlanType, getPlanTypeMeta } = usePlanTypes();
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [isEstateZoneModalOpen, setIsEstateZoneModalOpen] = useState(false);

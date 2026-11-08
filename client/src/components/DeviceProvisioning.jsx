@@ -52,7 +52,7 @@ export default function DeviceProvisioning({
   const isKu = lang === 'ku';
   const { zones, formatZone } = useZones();
   const { estateZones, formatEstateZone } = useEstateZones();
-  const { racks } = useRacks();
+  const { racks } = useRacks(devices);
   const [isRackModalOpen, setIsRackModalOpen] = useState(false);
 
   const [search, setSearch] = useState('');

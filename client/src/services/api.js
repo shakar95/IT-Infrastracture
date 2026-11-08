@@ -219,6 +219,37 @@ export const api = {
     }));
   },
 
+  // Racks & Server Cabinets
+  async getRacks() {
+    return handleResponse(await fetch(`${API_BASE}/racks`));
+  },
+  async syncRacks(clientRacks) {
+    return handleResponse(await fetch(`${API_BASE}/racks/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientRacks }),
+    }));
+  },
+  async createRack(rack) {
+    return handleResponse(await fetch(`${API_BASE}/racks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rack),
+    }));
+  },
+  async updateRack(id, updates) {
+    return handleResponse(await fetch(`${API_BASE}/racks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }));
+  },
+  async deleteRack(id) {
+    return handleResponse(await fetch(`${API_BASE}/racks/${id}`, {
+      method: 'DELETE',
+    }));
+  },
+
   // AI Scanner & Troubleshooting
   async ocrScanSticker(imageBase64, mimeType = 'image/jpeg') {
     return handleResponse(await fetch(`${API_BASE}/ai/ocr-scan`, {

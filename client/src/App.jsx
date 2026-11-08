@@ -20,7 +20,7 @@ export default function App() {
   const [boqModels, setBoqModels] = useState([]);
   const [devices, setDevices] = useState([]);
   const [floorPlans, setFloorPlans] = useState([]);
-  const { racks } = useRacks();
+  const { racks } = useRacks(devices);
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
