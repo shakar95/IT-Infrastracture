@@ -1638,14 +1638,21 @@ export default function InteractiveMap({
                                 </span>
                               </div>
 
-                              <div className="max-h-36 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
                                 {devicesInThisRack.length === 0 ? (
                                   <div className="p-2 text-center text-[11px] text-slate-500 italic bg-slate-950/60 rounded-lg border border-slate-800/80">
                                     {isKu ? 'هیچ ئامێرێک لەناو ئەم ڕاکە دانەنراوە' : 'No equipment mounted in this rack yet'}
                                   </div>
                                 ) : (
                                   devicesInThisRack.map((dev) => {
-                                    const devModel = boqModels.find((m) => m.id === dev.boq_model_id);
+                                    const devModel = boqModels.find((m) => m.id === dev.boq_model_id) || dev.boq_model;
+                                    const category = devModel ? categories.find((c) => c.id === devModel.category_id) : null;
+                                    const DevIcon = getIctDeviceIcon(dev, devModel, category);
+                                    const productImg = devModel?.product_image_url || '/default-ict-device.svg';
+                                    const formattedUnit = dev.rack_unit
+                                      ? (String(dev.rack_unit).toUpperCase().startsWith('U') ? dev.rack_unit : `U${dev.rack_unit}`)
+                                      : null;
+
                                     return (
                                       <div
                                         key={dev.id}
@@ -1655,18 +1662,48 @@ export default function InteractiveMap({
                                           setSelectedRack(null);
                                           setMobileActiveView('devices');
                                         }}
-                                        className="p-1.5 bg-slate-950/80 hover:bg-slate-800 rounded-lg border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-1.5"
+                                        className="p-1.5 bg-slate-950/80 hover:bg-slate-800 rounded-xl border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-2 group"
                                       >
-                                        <div className="min-w-0">
-                                          <div className="flex items-center gap-1">
-                                            <span className="font-mono text-[11px] font-bold text-white truncate">{dev.custom_label_id}</span>
-                                            {dev.rack_unit && (
-                                              <span className="text-[9px] font-mono px-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
-                                                {dev.rack_unit}
-                                              </span>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          {/* Mini Thumbnail */}
+                                          <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 p-0.5 flex items-center justify-center shrink-0 overflow-hidden relative shadow-inner">
+                                            <img
+                                              src={productImg}
+                                              alt={devModel?.model || 'Device'}
+                                              className="w-full h-full object-contain"
+                                              loading="lazy"
+                                              onError={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                const fallback = e.currentTarget.parentElement?.querySelector('.device-popover-icon');
+                                                if (fallback) fallback.classList.remove('hidden');
+                                              }}
+                                            />
+                                            <div className="device-popover-icon hidden w-full h-full items-center justify-center text-indigo-400">
+                                              <DevIcon className="w-4 h-4" />
+                                            </div>
+                                            {category?.color_code && (
+                                              <div
+                                                className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-slate-900"
+                                                style={{ backgroundColor: category.color_code }}
+                                              />
                                             )}
                                           </div>
-                                          <p className="text-[9px] text-slate-400 truncate">{devModel ? `${devModel.brand} ${devModel.model}` : 'Device'}</p>
+
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="font-mono text-[11px] font-bold text-white truncate group-hover:text-indigo-300 transition">
+                                                {dev.custom_label_id}
+                                              </span>
+                                              {formattedUnit && (
+                                                <span className="text-[9px] font-mono px-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+                                                  {formattedUnit}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className="text-[10px] text-slate-300 truncate font-medium">
+                                              {devModel ? `${devModel.brand} ${devModel.model}` : 'Device'}
+                                            </p>
+                                          </div>
                                         </div>
                                         <span className="text-[9px] font-mono text-cyan-400 shrink-0">{dev.ip_address || '—'}</span>
                                       </div>
@@ -1839,14 +1876,21 @@ export default function InteractiveMap({
                       </span>
                     </div>
 
-                    <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                    <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                       {rackDevices.length === 0 ? (
                         <div className="p-4 text-center text-xs text-slate-500 bg-slate-950/60 rounded-xl border border-slate-800/80 italic">
                           {isKu ? 'هیچ ئامێرێک بۆ ئەم ڕاکە دیاری نەکراوە' : 'No equipment currently assigned to this rack'}
                         </div>
                       ) : (
                         rackDevices.map((dev) => {
-                          const model = boqModels.find((m) => m.id === dev.boq_model_id);
+                          const model = boqModels.find((m) => m.id === dev.boq_model_id) || dev.boq_model;
+                          const category = model ? categories.find((c) => c.id === model.category_id) : null;
+                          const DevIcon = getIctDeviceIcon(dev, model, category);
+                          const productImg = model?.product_image_url || '/default-ict-device.svg';
+                          const formattedUnit = dev.rack_unit
+                            ? (String(dev.rack_unit).toUpperCase().startsWith('U') ? dev.rack_unit : `U${dev.rack_unit}`)
+                            : null;
+
                           return (
                             <div
                               key={dev.id}
@@ -1855,20 +1899,72 @@ export default function InteractiveMap({
                                 setSelectedRack(null);
                                 setMobileActiveView('devices');
                               }}
-                              className="p-2 bg-slate-950/80 hover:bg-slate-800/60 rounded-xl border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-2"
+                              className="p-2.5 bg-slate-950/85 hover:bg-slate-800/90 rounded-2xl border border-slate-800 hover:border-indigo-500/60 cursor-pointer transition-all duration-150 flex items-center justify-between gap-3 group shadow-sm hover:shadow-md hover:shadow-indigo-950/30"
                             >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono text-xs font-bold text-white">{dev.custom_label_id}</span>
-                                  {dev.rack_unit && (
-                                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
-                                      {dev.rack_unit}
-                                    </span>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {/* Small Device Thumbnail Image with Category Dot */}
+                                <div className="w-11 h-11 rounded-xl bg-slate-900 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden relative shadow-inner group-hover:border-indigo-500/50 transition">
+                                  <img
+                                    src={productImg}
+                                    alt={model?.model || 'Device'}
+                                    className="w-full h-full object-contain"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const fallback = e.currentTarget.parentElement?.querySelector('.device-icon-fallback');
+                                      if (fallback) fallback.classList.remove('hidden');
+                                    }}
+                                  />
+                                  <div className="device-icon-fallback hidden w-full h-full items-center justify-center text-indigo-400">
+                                    <DevIcon className="w-5 h-5" />
+                                  </div>
+                                  {category?.color_code && (
+                                    <div
+                                      className="absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border border-slate-900 shadow"
+                                      style={{ backgroundColor: category.color_code }}
+                                      title={isKu ? (category.name_ku || category.name) : category.name}
+                                    />
                                   )}
                                 </div>
-                                <p className="text-[10px] text-slate-400 truncate">{model ? `${model.brand} ${model.model}` : 'Device'}</p>
+
+                                {/* Label, Rack Unit & Model Name */}
+                                <div className="min-w-0 space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono text-xs font-bold text-white group-hover:text-indigo-300 transition tracking-tight">
+                                      {dev.custom_label_id}
+                                    </span>
+                                    {formattedUnit && (
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                        {formattedUnit}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 font-medium truncate">
+                                    {model ? `${model.brand} ${model.model}` : 'Generic Device'}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                                    {dev.ip_address ? (
+                                      <span className="text-cyan-400 font-semibold">{dev.ip_address}</span>
+                                    ) : (
+                                      <span className="text-slate-500">No IP</span>
+                                    )}
+                                    {dev.switch_port && (
+                                      <span className="text-slate-500">• Port {dev.switch_port}</span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                              <span className="text-[10px] font-mono text-cyan-400 shrink-0">{dev.ip_address || '—'}</span>
+
+                              {/* Right: Status Pill */}
+                              <div className="shrink-0 flex items-center pr-1">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  dev.installation_status === 'Verified'
+                                    ? 'bg-emerald-400 shadow-sm shadow-emerald-500/50'
+                                    : dev.installation_status === 'Configured'
+                                    ? 'bg-indigo-400 shadow-sm shadow-indigo-500/50'
+                                    : 'bg-blue-400 shadow-sm shadow-blue-500/50'
+                                }`} title={dev.installation_status || 'Installed'} />
+                              </div>
                             </div>
                           );
                         })
