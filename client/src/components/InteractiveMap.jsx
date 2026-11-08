@@ -115,6 +115,19 @@ export default function InteractiveMap({
   const [assignSearch, setAssignSearch] = useState('');
   const [assignCategory, setAssignCategory] = useState('all');
 
+  // Pin Drag-and-Drop Repositioning State
+  const [draggedPin, setDraggedPin] = useState(null); // { id, type: 'device' | 'rack', posX, posY }
+  const pinDragRef = useRef({
+    isDragging: false,
+    hasMoved: false,
+    item: null,
+    type: 'device',
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
+
   // 2. All Ref Hooks
   const dragOriginRef = useRef({ x: 0, y: 0 });
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -261,6 +274,10 @@ export default function InteractiveMap({
 
   // Non-passive wheel handler: Smooth, guaranteed e.preventDefault() to stop page scroll, supports mouse & trackpad
   const handleWheelZoom = useCallback((e) => {
+    // Suppress blueprint zoom if manual pin placement modal or any modal is open
+    if (activeClickCoordRef.current || e.target.closest('.no-map-zoom, .modal-open, [role="dialog"], .fixed')) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
 
@@ -428,6 +445,171 @@ export default function InteractiveMap({
     }
     autoFitBlueprint();
   };
+
+  // Pin Drag Handlers & Window Movement Listeners (Drag & Drop repositioning)
+  const handlePinMouseDown = (e, item, type = 'device') => {
+    e.stopPropagation();
+    if (e.button && e.button !== 0) return; // Only primary mouse button
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    pinDragRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      item,
+      type,
+      startX: clientX,
+      startY: clientY,
+      currentX: item.pos_x,
+      currentY: item.pos_y,
+    };
+  };
+
+  const handlePinTouchStart = (e, item, type = 'device') => {
+    e.stopPropagation();
+    if (!e.touches || !e.touches[0]) return;
+    const touch = e.touches[0];
+    pinDragRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      item,
+      type,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      currentX: item.pos_x,
+      currentY: item.pos_y,
+    };
+  };
+
+  useEffect(() => {
+    const handleWindowMouseMove = (e) => {
+      if (!pinDragRef.current.isDragging || !blueprintGraphicRef.current) return;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const dx = clientX - pinDragRef.current.startX;
+      const dy = clientY - pinDragRef.current.startY;
+      if (Math.hypot(dx, dy) >= 4) {
+        pinDragRef.current.hasMoved = true;
+      }
+      if (pinDragRef.current.hasMoved) {
+        const rect = blueprintGraphicRef.current.getBoundingClientRect();
+        const rawX = ((clientX - rect.left) / rect.width) * 100;
+        const rawY = ((clientY - rect.top) / rect.height) * 100;
+        const clampedX = Math.max(0.5, Math.min(99.5, Math.round(rawX * 10) / 10));
+        const clampedY = Math.max(0.5, Math.min(99.5, Math.round(rawY * 10) / 10));
+        pinDragRef.current.currentX = clampedX;
+        pinDragRef.current.currentY = clampedY;
+        setDraggedPin({
+          id: pinDragRef.current.item.id,
+          type: pinDragRef.current.type,
+          posX: clampedX,
+          posY: clampedY,
+        });
+      }
+    };
+
+    const handleWindowTouchMove = (e) => {
+      if (!pinDragRef.current.isDragging || !blueprintGraphicRef.current || !e.touches || !e.touches[0]) return;
+      const touch = e.touches[0];
+      const clientX = touch.clientX;
+      const clientY = touch.clientY;
+      const dx = clientX - pinDragRef.current.startX;
+      const dy = clientY - pinDragRef.current.startY;
+      if (Math.hypot(dx, dy) >= 4) {
+        pinDragRef.current.hasMoved = true;
+        if (e.cancelable) e.preventDefault();
+      }
+      if (pinDragRef.current.hasMoved) {
+        const rect = blueprintGraphicRef.current.getBoundingClientRect();
+        const rawX = ((clientX - rect.left) / rect.width) * 100;
+        const rawY = ((clientY - rect.top) / rect.height) * 100;
+        const clampedX = Math.max(0.5, Math.min(99.5, Math.round(rawX * 10) / 10));
+        const clampedY = Math.max(0.5, Math.min(99.5, Math.round(rawY * 10) / 10));
+        pinDragRef.current.currentX = clampedX;
+        pinDragRef.current.currentY = clampedY;
+        setDraggedPin({
+          id: pinDragRef.current.item.id,
+          type: pinDragRef.current.type,
+          posX: clampedX,
+          posY: clampedY,
+        });
+      }
+    };
+
+    const handleWindowEnd = () => {
+      if (!pinDragRef.current.isDragging) return;
+      const { hasMoved, item, type, currentX, currentY } = pinDragRef.current;
+      pinDragRef.current.isDragging = false;
+
+      if (hasMoved && item && activePlan) {
+        if (type === 'device') {
+          if (onUpdatePosition) {
+            onUpdatePosition(item.id, {
+              floor_plan_id: activePlan.id,
+              pos_x: currentX,
+              pos_y: currentY,
+            });
+          }
+          triggerPlacementFlash(currentX, currentY);
+          setSelectedDevice({ ...item, floor_plan_id: activePlan.id, pos_x: currentX, pos_y: currentY });
+          setSelectedRack(null);
+          setMobileActiveView('devices');
+        } else if (type === 'rack') {
+          if (updateRackPosition) {
+            updateRackPosition(item.id, {
+              floor_plan_id: activePlan.id,
+              pos_x: currentX,
+              pos_y: currentY,
+            });
+          }
+          triggerPlacementFlash(currentX, currentY);
+          setSelectedRack({ ...item, floor_plan_id: activePlan.id, pos_x: currentX, pos_y: currentY });
+          setSelectedDevice(null);
+          setMobileActiveView('devices');
+        }
+      } else if (!hasMoved && item) {
+        // Simple tap / click without moving
+        if (type === 'device') {
+          setSelectedDevice(item);
+          setSelectedRack(null);
+          setPingStatus(null);
+          setActiveClickCoord(null);
+          setMobileActiveView('devices');
+        } else if (type === 'rack') {
+          setSelectedRack(item);
+          setSelectedDevice(null);
+          setPingStatus(null);
+          setActiveClickCoord(null);
+          setMobileActiveView('devices');
+        }
+      }
+
+      pinDragRef.current = {
+        isDragging: false,
+        hasMoved: false,
+        item: null,
+        type: 'device',
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+      };
+      setDraggedPin(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowEnd);
+    window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+    window.addEventListener('touchend', handleWindowEnd);
+    window.addEventListener('touchcancel', handleWindowEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowEnd);
+      window.removeEventListener('touchmove', handleWindowTouchMove);
+      window.removeEventListener('touchend', handleWindowEnd);
+      window.removeEventListener('touchcancel', handleWindowEnd);
+    };
+  }, [activePlan, onUpdatePosition, updateRackPosition]);
 
   // Drag Panning Handlers
   const handleMouseDown = (e) => {
@@ -1241,11 +1423,14 @@ export default function InteractiveMap({
                     </div>
                   )}
 
-                  {/* Interactive Device Pins with Dynamic ICT Icons */}
+                  {/* Interactive Device Pins with Dynamic ICT Icons & Drag-and-Drop Repositioning */}
                   {pinnedDevices.map((dev) => {
                     const model = boqModels.find((m) => m.id === dev.boq_model_id);
                     const category = model ? categories.find((c) => c.id === model.category_id) : null;
                     const isSelected = selectedDevice?.id === dev.id;
+                    const isBeingDragged = draggedPin?.id === dev.id && draggedPin?.type === 'device';
+                    const currentX = isBeingDragged ? draggedPin.posX : dev.pos_x;
+                    const currentY = isBeingDragged ? draggedPin.posY : dev.pos_y;
                     const DevIcon = getIctDeviceIcon(dev, model, category);
 
                     const statusColor =
@@ -1260,29 +1445,40 @@ export default function InteractiveMap({
                     return (
                       <div
                         key={dev.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedDevice(dev);
-                          setSelectedRack(null);
-                          setPingStatus(null);
-                          setActiveClickCoord(null);
-                        }}
+                        onMouseDown={(e) => handlePinMouseDown(e, dev, 'device')}
+                        onTouchStart={(e) => handlePinTouchStart(e, dev, 'device')}
                         style={{
-                          left: `${dev.pos_x}%`,
-                          top: `${dev.pos_y}%`,
+                          left: `${currentX}%`,
+                          top: `${currentY}%`,
                           transform: 'translate(-50%, -18px)',
+                          zIndex: isBeingDragged ? 50 : isSelected ? 30 : 20,
+                          touchAction: 'none',
                         }}
-                        className="device-pin absolute cursor-pointer group z-20 flex flex-col items-center select-none"
+                        className={`device-pin absolute group flex flex-col items-center select-none ${
+                          isBeingDragged ? 'cursor-grabbing scale-110' : 'cursor-grab'
+                        }`}
                       >
+                        {/* Live Drag Coordinate Pill */}
+                        {isBeingDragged && (
+                          <div className="absolute bottom-full mb-2 px-2.5 py-1 rounded-xl bg-blue-600 border border-blue-400 text-white text-[10px] font-mono font-bold shadow-2xl animate-pulse whitespace-nowrap z-50 pointer-events-none flex items-center gap-1.5">
+                            <Move className="w-3 h-3" />
+                            <span>X: {currentX}% / Y: {currentY}%</span>
+                          </div>
+                        )}
+
                         {/* Status Ring & ICT Device Icon */}
                         <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-125 ${
-                            isSelected ? 'scale-125 ring-4 ring-blue-500/40' : ''
+                          className={`w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-transform duration-150 ${
+                            isBeingDragged
+                              ? 'scale-125 ring-4 ring-blue-400 shadow-xl shadow-blue-500/60'
+                              : isSelected
+                              ? 'scale-125 ring-4 ring-blue-500/40'
+                              : 'group-hover:scale-125'
                           }`}
                           style={{
                             backgroundColor: '#0f172a',
                             border: `2.5px solid ${statusColor}`,
-                            boxShadow: isSelected ? `0 0 18px ${statusColor}` : '0 4px 10px rgba(0,0,0,0.6)',
+                            boxShadow: isSelected || isBeingDragged ? `0 0 18px ${statusColor}` : '0 4px 10px rgba(0,0,0,0.6)',
                           }}
                         >
                           <DevIcon className="w-4 h-4 text-white drop-shadow" />
@@ -1295,61 +1491,80 @@ export default function InteractiveMap({
                           </span>
                         </div>
 
-                        {/* Rich Hover / Touch Tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
-                          <div className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl text-center space-y-0.5">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <DevIcon className="w-3.5 h-3.5 text-blue-400" />
-                              <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id}</p>
+                        {/* Rich Hover / Touch Tooltip (When not dragging) */}
+                        {!isBeingDragged && (
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
+                            <div className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl text-center space-y-0.5">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <DevIcon className="w-3.5 h-3.5 text-blue-400" />
+                                <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id}</p>
+                              </div>
+                              <p className="text-[10px] text-blue-300 font-mono">{dev.ip_address || 'No IP'}</p>
+                              <p className="text-[10px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
                             </div>
-                            <p className="text-[10px] text-blue-300 font-mono">{dev.ip_address || 'No IP'}</p>
-                            <p className="text-[10px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
+                            <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
                           </div>
-                          <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
-                        </div>
+                        )}
                       </div>
                     );
                   })}
 
-                  {/* Interactive Server Rack Pins */}
+                  {/* Interactive Server Rack Pins with Drag-and-Drop & Direct Rack Equipment View */}
                   {pinnedRacks.map((rack) => {
                     const isSelected = selectedRack?.id === rack.id;
-                    const devicesInThisRack = devices.filter(
-                      (d) =>
-                        d.rack_name &&
-                        (d.rack_name.toLowerCase() === rack.name.toLowerCase() ||
-                          (rack.nameKu && d.rack_name.toLowerCase() === rack.nameKu.toLowerCase()) ||
-                          d.rack_name === rack.id)
-                    );
+                    const isBeingDragged = draggedPin?.id === rack.id && draggedPin?.type === 'rack';
+                    const currentX = isBeingDragged ? draggedPin.posX : rack.pos_x;
+                    const currentY = isBeingDragged ? draggedPin.posY : rack.pos_y;
+                    const devicesInThisRack = devices.filter((d) => {
+                      if (!d.rack_name && !d.rack_id) return false;
+                      const rName = rack.name?.toLowerCase();
+                      const rNameKu = rack.nameKu?.toLowerCase();
+                      const dName = d.rack_name?.toLowerCase();
+                      return (
+                        d.rack_id === rack.id ||
+                        d.rack_name === rack.id ||
+                        (rName && dName === rName) ||
+                        (rNameKu && dName === rNameKu)
+                      );
+                    });
 
                     return (
                       <div
                         key={`rack-pin-${rack.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedRack(rack);
-                          setSelectedDevice(null);
-                          setPingStatus(null);
-                          setActiveClickCoord(null);
-                        }}
+                        onMouseDown={(e) => handlePinMouseDown(e, rack, 'rack')}
+                        onTouchStart={(e) => handlePinTouchStart(e, rack, 'rack')}
                         style={{
-                          left: `${rack.pos_x}%`,
-                          top: `${rack.pos_y}%`,
+                          left: `${currentX}%`,
+                          top: `${currentY}%`,
                           transform: 'translate(-50%, -20px)',
+                          zIndex: isBeingDragged ? 50 : isSelected ? 40 : 20,
+                          touchAction: 'none',
                         }}
-                        className="rack-pin absolute cursor-pointer group z-20 flex flex-col items-center select-none"
+                        className={`rack-pin absolute group flex flex-col items-center select-none ${
+                          isBeingDragged ? 'cursor-grabbing scale-110' : 'cursor-grab'
+                        }`}
                       >
+                        {/* Live Drag Coordinate Pill */}
+                        {isBeingDragged && (
+                          <div className="absolute bottom-full mb-2 px-2.5 py-1 rounded-xl bg-indigo-600 border border-indigo-400 text-white text-[10px] font-mono font-bold shadow-2xl animate-pulse whitespace-nowrap z-50 pointer-events-none flex items-center gap-1.5">
+                            <Move className="w-3 h-3" />
+                            <span>X: {currentX}% / Y: {currentY}%</span>
+                          </div>
+                        )}
+
                         {/* Rack Icon Container */}
                         <div
-                          className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-transform duration-200 group-hover:scale-125 ${
-                            isSelected
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-transform duration-150 ${
+                            isBeingDragged
+                              ? 'scale-125 ring-4 ring-indigo-400 shadow-xl shadow-indigo-500/60'
+                              : isSelected
                               ? 'scale-125 ring-4 ring-indigo-400 shadow-xl shadow-indigo-500/50'
-                              : 'shadow-lg'
+                              : 'group-hover:scale-125 shadow-lg'
                           }`}
                           style={{
                             backgroundColor: '#0f172a',
                             border: '2.5px solid #6366f1',
-                            boxShadow: isSelected
+                            boxShadow: isSelected || isBeingDragged
                               ? '0 0 22px rgba(99, 102, 241, 0.8)'
                               : '0 4px 12px rgba(0,0,0,0.8)',
                           }}
@@ -1377,26 +1592,142 @@ export default function InteractiveMap({
                           </span>
                         )}
 
-                        {/* Rich Hover / Touch Tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
-                          <div className="px-3 py-2 bg-slate-900 border border-indigo-500/60 rounded-xl shadow-2xl text-center space-y-1">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Server className="w-4 h-4 text-indigo-400" />
-                              <p className="text-xs font-bold font-mono text-white">
-                                {isKu ? (rack.nameKu || rack.name) : rack.name}
-                              </p>
+                        {/* Rich On-Canvas Rack Details & Mounted Equipment Popover (Directly on Map) */}
+                        {isSelected && !isBeingDragged && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-40 w-72 sm:w-80 bg-slate-900/98 backdrop-blur-md border border-indigo-500/60 rounded-2xl p-3.5 shadow-2xl text-left pointer-events-auto space-y-2.5 animate-fadeIn"
+                          >
+                            {/* Header */}
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-400">
+                                  <Server className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-bold font-mono text-white leading-tight">
+                                    {isKu ? (rack.nameKu || rack.name) : rack.name}
+                                  </h4>
+                                  <span className="text-[10px] text-indigo-300 font-mono">
+                                    {rack.totalUnits}U • {formatEstateZone(rack.zone, lang)}
+                                    {rack.location ? ` • ${rack.location}` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRack(null);
+                                }}
+                                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-mono">
-                              <span className="text-indigo-400 font-semibold">{rack.totalUnits}U Capacity</span>
-                              <span>•</span>
-                              <span className="text-emerald-400 font-semibold">{devicesInThisRack.length} Mounted</span>
+
+                            {/* Devices in this Rack */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-slate-300 font-semibold flex items-center gap-1">
+                                  <Cpu className="w-3 h-3 text-indigo-400" />
+                                  <span>{isKu ? 'ئامێرەکانی ناو ئەم ڕاکە' : 'Mounted Devices in Rack'}</span>
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                  {devicesInThisRack.length} {isKu ? 'ئامێر' : 'items'}
+                                </span>
+                              </div>
+
+                              <div className="max-h-36 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                {devicesInThisRack.length === 0 ? (
+                                  <div className="p-2 text-center text-[11px] text-slate-500 italic bg-slate-950/60 rounded-lg border border-slate-800/80">
+                                    {isKu ? 'هیچ ئامێرێک لەناو ئەم ڕاکە دانەنراوە' : 'No equipment mounted in this rack yet'}
+                                  </div>
+                                ) : (
+                                  devicesInThisRack.map((dev) => {
+                                    const devModel = boqModels.find((m) => m.id === dev.boq_model_id);
+                                    return (
+                                      <div
+                                        key={dev.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedDevice(dev);
+                                          setSelectedRack(null);
+                                          setMobileActiveView('devices');
+                                        }}
+                                        className="p-1.5 bg-slate-950/80 hover:bg-slate-800 rounded-lg border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-1.5"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1">
+                                            <span className="font-mono text-[11px] font-bold text-white truncate">{dev.custom_label_id}</span>
+                                            {dev.rack_unit && (
+                                              <span className="text-[9px] font-mono px-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+                                                {dev.rack_unit}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-[9px] text-slate-400 truncate">{devModel ? `${devModel.brand} ${devModel.model}` : 'Device'}</p>
+                                        </div>
+                                        <span className="text-[9px] font-mono text-cyan-400 shrink-0">{dev.ip_address || '—'}</span>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
                             </div>
-                            {rack.location && (
-                              <p className="text-[10px] text-slate-400">{rack.location}</p>
-                            )}
+
+                            {/* Quick Action Buttons */}
+                            <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsRackModalOpen(true);
+                                }}
+                                className="flex-1 py-1 px-2 rounded-lg text-[10px] font-semibold bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Settings2 className="w-3 h-3" />
+                                <span>{isKu ? 'دەستکاری ڕاک' : 'Manage Rack'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUnpinRack(rack);
+                                }}
+                                className="py-1 px-2 rounded-lg text-[10px] font-semibold text-slate-400 hover:text-red-400 hover:bg-slate-800 transition cursor-pointer"
+                              >
+                                {isKu ? 'لابردن لە نەخشە' : 'Unpin'}
+                              </button>
+                            </div>
+
+                            {/* Arrow Pointer */}
+                            <div className="w-3 h-3 bg-slate-900 border-r border-b border-indigo-500/60 rotate-45 absolute -bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-none" />
                           </div>
-                          <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-indigo-500/60" />
-                        </div>
+                        )}
+
+                        {/* Rich Hover / Touch Tooltip (when not selected and not dragged) */}
+                        {!isSelected && !isBeingDragged && (
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:flex flex-col items-center pointer-events-none whitespace-nowrap z-30">
+                            <div className="px-3 py-2 bg-slate-900 border border-indigo-500/60 rounded-xl shadow-2xl text-center space-y-1">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Server className="w-4 h-4 text-indigo-400" />
+                                <p className="text-xs font-bold font-mono text-white">
+                                  {isKu ? (rack.nameKu || rack.name) : rack.name}
+                                </p>
+                              </div>
+                              <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-mono">
+                                <span className="text-indigo-400 font-semibold">{rack.totalUnits}U Capacity</span>
+                                <span>•</span>
+                                <span className="text-emerald-400 font-semibold">{devicesInThisRack.length} Mounted</span>
+                              </div>
+                              {rack.location && (
+                                <p className="text-[10px] text-slate-400">{rack.location}</p>
+                              )}
+                            </div>
+                            <div className="w-2 h-2 bg-slate-900 rotate-45 -mt-1 border-r border-b border-indigo-500/60" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1483,13 +1814,18 @@ export default function InteractiveMap({
 
               {/* Mounted Equipment in this Rack */}
               {(() => {
-                const rackDevices = devices.filter(
-                  (d) =>
-                    d.rack_name &&
-                    (d.rack_name.toLowerCase() === selectedRack.name.toLowerCase() ||
-                      (selectedRack.nameKu && d.rack_name.toLowerCase() === selectedRack.nameKu.toLowerCase()) ||
-                      d.rack_name === selectedRack.id)
-                );
+                const rackDevices = devices.filter((d) => {
+                  if (!d.rack_name && !d.rack_id) return false;
+                  const rName = selectedRack.name?.toLowerCase();
+                  const rNameKu = selectedRack.nameKu?.toLowerCase();
+                  const dName = d.rack_name?.toLowerCase();
+                  return (
+                    d.rack_id === selectedRack.id ||
+                    d.rack_name === selectedRack.id ||
+                    (rName && dName === rName) ||
+                    (rNameKu && dName === rNameKu)
+                  );
+                });
 
                 return (
                   <div className="space-y-2">
@@ -1517,6 +1853,7 @@ export default function InteractiveMap({
                               onClick={() => {
                                 setSelectedDevice(dev);
                                 setSelectedRack(null);
+                                setMobileActiveView('devices');
                               }}
                               className="p-2 bg-slate-950/80 hover:bg-slate-800/60 rounded-xl border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition flex items-center justify-between gap-2"
                             >
@@ -1561,41 +1898,35 @@ export default function InteractiveMap({
                 </button>
               </div>
             </div>
-          ) : selectedDevice ? (
-            <div className="bg-slate-900/95 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
-              {(() => {
-                const model = boqModels.find((m) => m.id === selectedDevice.boq_model_id) || selectedDevice.boq_model;
-                const category = model ? categories.find((c) => c.id === model.category_id) : null;
-                const DevIcon = getIctDeviceIcon(selectedDevice, model, category);
+          ) : selectedDevice ? (() => {
+            const model = boqModels.find((m) => m.id === selectedDevice.boq_model_id) || selectedDevice.boq_model;
+            const category = model ? categories.find((c) => c.id === model.category_id) : null;
+            const DevIcon = getIctDeviceIcon(selectedDevice, model, category);
 
-                return (
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 shadow-sm">
-                        <DevIcon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-                          {t.inspectTitle} {category ? `• ${isKu ? (category.name_ku || category.name) : category.name}` : ''}
-                        </span>
-                        <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id}</h3>
-                      </div>
+            return (
+              <div className="bg-slate-900/95 border border-blue-500/40 rounded-2xl p-4 shadow-xl space-y-4 animate-fadeIn">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0 shadow-sm">
+                      <DevIcon className="w-5 h-5" />
                     </div>
-                    <button
-                      onClick={() => setSelectedDevice(null)}
-                      className="text-slate-400 hover:text-white p-1 rounded-lg"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
+                        {t.inspectTitle} {category ? `• ${isKu ? (category.name_ku || category.name) : category.name}` : ''}
+                      </span>
+                      <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id}</h3>
+                    </div>
                   </div>
-                );
-              })()}
+                  <button
+                    onClick={() => setSelectedDevice(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
 
-              {/* Hardware Device Photo & Model Name */}
-              {(() => {
-                const model = boqModels.find((m) => m.id === selectedDevice.boq_model_id) || selectedDevice.boq_model;
-                if (!model) return null;
-                return (
+                {/* Hardware Device Photo & Model Name */}
+                {model && (
                   <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
                     {model.product_image_url && (
                       <div className="relative h-28 w-full bg-slate-950 overflow-hidden">
@@ -1612,8 +1943,7 @@ export default function InteractiveMap({
                       <div className="text-[11px] text-slate-400 truncate">{model.description}</div>
                     </div>
                   </div>
-                );
-              })()}
+                )}
 
               {/* Coordinates Pill */}
               <div className="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono">
@@ -1972,7 +2302,8 @@ export default function InteractiveMap({
                 </button>
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             /* Unpinned Equipment & Server Racks Tray */
             <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">

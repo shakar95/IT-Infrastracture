@@ -16,3 +16,4 @@ WHERE plan_type IS NULL OR plan_type = '';
 
 -- 3. Verify the updated records
 SELECT id, name, name_ku, plan_type, zone, floor_level FROM floor_plans;
+
