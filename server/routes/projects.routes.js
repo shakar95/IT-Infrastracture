@@ -27,10 +27,11 @@ router.get('/', async (req, res) => {
           data.map((p) => ({
             id: p.id,
             name: p.project_name,
-            name_ku: p.project_name,
+            name_ku: p.network_defaults?.name_ku || p.project_name,
             location: p.location,
-            location_ku: p.location,
+            location_ku: p.network_defaults?.location_ku || p.location,
             client_name: p.client_name,
+            description: p.network_defaults?.description || p.location,
             network_defaults: p.network_defaults,
             is_default: p.id === data[0].id,
             created_at: p.created_at,
@@ -94,6 +95,85 @@ router.post('/', async (req, res) => {
     mockProjects.push(newProject);
     res.status(201).json(newProject);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT update project / site (name, description, location)
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, name_ku, location, location_ku, client_name, description } = req.body;
+
+    let updatedProject = null;
+
+    if (isSupabaseConfigured) {
+      const { data: existing } = await supabase
+        .from('project_settings')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      const updateData = {};
+      if (name !== undefined) updateData.project_name = name.trim();
+      if (location !== undefined) updateData.location = location.trim();
+      else if (description !== undefined) updateData.location = description.trim();
+      if (client_name !== undefined) updateData.client_name = client_name.trim();
+
+      const network_defaults = {
+        ...(existing?.network_defaults || {}),
+        ...(description !== undefined ? { description: description.trim() } : {}),
+        ...(name_ku !== undefined ? { name_ku: name_ku.trim() } : {}),
+        ...(location_ku !== undefined ? { location_ku: location_ku.trim() } : {}),
+      };
+      updateData.network_defaults = network_defaults;
+
+      const { data, error } = await supabase
+        .from('project_settings')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        updatedProject = {
+          id: data.id,
+          name: data.project_name,
+          name_ku: name_ku || data.network_defaults?.name_ku || data.project_name,
+          location: data.location,
+          location_ku: location_ku || data.network_defaults?.location_ku || data.location,
+          client_name: data.client_name,
+          description: data.network_defaults?.description || data.location,
+          network_defaults: data.network_defaults,
+          is_default: false,
+          created_at: data.created_at,
+        };
+      }
+    }
+
+    const mockIdx = mockProjects.findIndex((p) => p.id === id);
+    if (mockIdx !== -1) {
+      mockProjects[mockIdx] = {
+        ...mockProjects[mockIdx],
+        name: name !== undefined ? name.trim() : mockProjects[mockIdx].name,
+        name_ku: name_ku !== undefined ? name_ku.trim() : mockProjects[mockIdx].name_ku,
+        location: location !== undefined ? location.trim() : (description !== undefined ? description.trim() : mockProjects[mockIdx].location),
+        location_ku: location_ku !== undefined ? location_ku.trim() : mockProjects[mockIdx].location_ku,
+        client_name: client_name !== undefined ? client_name.trim() : mockProjects[mockIdx].client_name,
+        description: description !== undefined ? description.trim() : mockProjects[mockIdx].description,
+      };
+      if (!updatedProject) {
+        updatedProject = mockProjects[mockIdx];
+      }
+    }
+
+    if (!updatedProject) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json(updatedProject);
+  } catch (err) {
+    console.error('Error updating project:', err);
     res.status(500).json({ error: err.message });
   }
 });

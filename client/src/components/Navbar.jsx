@@ -15,6 +15,7 @@ import {
   Check,
   MapPin,
   Trash2,
+  Pencil,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 
@@ -27,6 +28,7 @@ export default function Navbar({
   activeProject = null,
   onSwitchProject,
   onOpenCreateProject,
+  onEditProject,
   onDeleteProject,
 }) {
   const t = translations[lang] || translations.en;
@@ -87,10 +89,6 @@ export default function Navbar({
                       <span className="truncate">{currentProjectName}</span>
                       <ChevronDown className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 transition-transform duration-200 shrink-0 ${isProjectDropdownOpen ? 'rotate-180 text-blue-400' : ''}`} />
                     </h1>
-                    <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      {t.systemActive}
-                    </span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1 truncate">
                     <span className="hidden sm:inline text-slate-500">{t.projectSubtitle} •</span>
@@ -147,20 +145,37 @@ export default function Navbar({
                             {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0 mx-1" />}
                           </button>
 
-                          {/* Delete Project / Site Button */}
-                          {onDeleteProject && (
-                            <button
-                              type="button"
-                              title={isKu ? 'سڕینەوەی ئەم سایتە بە تەواوی' : 'Delete this project / site completely'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteProject(proj.id);
-                              }}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition opacity-80 sm:opacity-0 sm:group-hover:opacity-100 shrink-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          {/* Project Actions: Edit & Delete */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {onEditProject && (
+                              <button
+                                type="button"
+                                title={isKu ? 'دەستکاریکردنی تایتڵ و دیسکریپشن' : 'Edit title & description'}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsProjectDropdownOpen(false);
+                                  onEditProject(proj);
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition opacity-80 sm:opacity-0 sm:group-hover:opacity-100 shrink-0"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {onDeleteProject && (
+                              <button
+                                type="button"
+                                title={isKu ? 'سڕینەوەی ئەم سایتە بە تەواوی' : 'Delete this project / site completely'}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteProject(proj.id);
+                                }}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition opacity-80 sm:opacity-0 sm:group-hover:opacity-100 shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}

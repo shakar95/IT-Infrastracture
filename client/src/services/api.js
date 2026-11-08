@@ -213,6 +213,13 @@ export const api = {
       body: JSON.stringify(projectData),
     }));
   },
+  async updateProject(id, projectData) {
+    return handleResponse(await fetch(`${API_BASE}/projects/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(projectData),
+    }));
+  },
   async deleteProject(id) {
     return handleResponse(await fetch(`${API_BASE}/projects/${id}`, {
       method: 'DELETE',

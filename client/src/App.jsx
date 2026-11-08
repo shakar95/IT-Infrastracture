@@ -8,6 +8,7 @@ import AiCameraScanner from './components/AiCameraScanner';
 import AiTroubleshooter from './components/AiTroubleshooter';
 import CategoryBuilder from './components/CategoryBuilder';
 import CreateProjectModal from './components/CreateProjectModal';
+import EditProjectModal from './components/EditProjectModal';
 import GeminiChatToggle from './components/GeminiChatToggle';
 import { useRacks } from './utils/rackManager';
 import { api } from './services/api';
@@ -24,6 +25,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Selected device for AI Troubleshooter
@@ -237,6 +239,20 @@ export default function App() {
     loadProjectScopedData(project.id);
   };
 
+  const handleUpdateProject = async (projectId, projectData) => {
+    try {
+      const updated = await api.updateProject(projectId, projectData);
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, ...updated } : p)));
+      if (activeProject?.id === projectId) {
+        setActiveProject((prev) => ({ ...prev, ...updated }));
+      }
+      return updated;
+    } catch (err) {
+      alert(err.message || 'Failed to update project');
+      throw err;
+    }
+  };
+
   const handleDeleteProject = async (projectId) => {
     const targetProj = projects.find((p) => p.id === projectId);
     const projName = targetProj
@@ -434,6 +450,7 @@ export default function App() {
         activeProject={activeProject}
         onSwitchProject={handleSwitchProject}
         onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+        onEditProject={(proj) => setProjectToEdit(proj)}
         onDeleteProject={handleDeleteProject}
       />
 
@@ -553,6 +570,15 @@ export default function App() {
         isOpen={isCreateProjectOpen}
         onClose={() => setIsCreateProjectOpen(false)}
         onCreateProject={handleCreateProject}
+        lang={lang}
+      />
+
+      {/* Edit Project / Site Modal */}
+      <EditProjectModal
+        isOpen={!!projectToEdit}
+        project={projectToEdit}
+        onClose={() => setProjectToEdit(null)}
+        onUpdateProject={handleUpdateProject}
         lang={lang}
       />
 

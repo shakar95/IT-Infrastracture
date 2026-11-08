@@ -125,62 +125,7 @@ export default function DashboardOverview({
   ];
 
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 border border-slate-800 p-5 sm:p-7 shadow-xl">
-        <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 mb-3">
-            <ShieldCheck className="w-4 h-4 text-blue-400" />
-            <span>{projectName} • {projectLocation}</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
-            {isKu
-              ? 'سیستەمی چاودێری و بەڕێوەبردنی تەواوەتی ژێرخانی IT و ELV'
-              : 'Unified IT & ELV Infrastructure Commissioning Engine'}
-          </h2>
-          <p className="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
-            {isKu
-              ? 'چاودێریکردنی سەنتەری پەخشی IPTV، سیستەمی کۆنترۆڵی Crestron، تۆڕی خێرای Wi-Fi 7، کامێراکانی CCTV، ناسینەوەی تابلۆی ئۆتۆمبێل LPR، و دەروازە زیرەکەکان.'
-              : 'Real-time telemetry, spatial floor plan mapping, and automated provisioning for IPTV headends, Crestron automation, Wi-Fi 7, CCTV, LPR gate barriers, and video intercoms.'}
-          </p>
-
-          {/* Quick Action Pills */}
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            <button
-              onClick={() => setActiveTab('devices')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30 transition active:scale-95"
-            >
-              <Cpu className="w-4 h-4" />
-              {t.btnNewDevice}
-            </button>
-            <button
-              onClick={() => setActiveTab('scanner')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 hover:border-slate-700 transition active:scale-95"
-            >
-              <Camera className="w-4 h-4 text-blue-400" />
-              {t.btnScanSticker}
-            </button>
-            <button
-              onClick={() => setActiveTab('map')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 hover:border-slate-700 transition active:scale-95"
-            >
-              <MapPin className="w-4 h-4 text-blue-400" />
-              {t.btnOpenMap}
-            </button>
-            <button
-              onClick={() => setActiveTab('troubleshoot')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600/15 hover:bg-blue-600/25 text-blue-300 border border-blue-500/30 transition active:scale-95"
-            >
-              <Bot className="w-4 h-4 text-blue-400" />
-              {t.btnAiHelp}
-            </button>
-          </div>
-        </div>
-
-        {/* Ambient Glow */}
-        <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-      </div>
-
+    <div className="space-y-6 animate-fadeIn">
       {/* Primary KPI Metrics Grid (Responsive 2-col on mobile, 5-col on desktop) */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {stats.map((stat, i) => {
