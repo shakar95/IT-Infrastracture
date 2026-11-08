@@ -39,3 +39,57 @@ export function formatShortFloorLevel(level, lang = 'en') {
   return isKu ? `قاتی ${num}` : `Floor ${num}`;
 }
 
+/**
+ * Returns a complete, user-friendly floor plan display label with architectural floor level
+ * e.g. "Guest House (Basement -1)", "Main Villa (Ground Floor 0)", "Service Area (Basement -1)"
+ */
+export function getFloorPlanDisplayLabel(fp, lang = 'en') {
+  if (!fp) return '';
+  const isKu = lang === 'ku';
+  const planName = (isKu ? (fp.name_ku || fp.name) : (fp.name || fp.name_ku)) || (isKu ? 'نەخشە' : 'Floor Plan');
+
+  let floorText = null;
+  let floorTextEn = null;
+
+  if (fp.floor_level !== undefined && fp.floor_level !== null && fp.floor_level !== '') {
+    floorText = formatFloorLevel(fp.floor_level, lang);
+    floorTextEn = formatFloorLevel(fp.floor_level, 'en');
+  } else {
+    // Intelligent heuristic fallback from plan name
+    const combined = `${fp.name || ''} ${fp.name_ku || ''}`.toLowerCase();
+    if (combined.includes('basement 2') || combined.includes('ژێرزەمینی دووەم') || combined.includes('-2')) {
+      floorText = isKu ? 'ژێرزەمینی دووەم (-2)' : 'Basement 2 (-2)';
+      floorTextEn = 'Basement 2 (-2)';
+    } else if (combined.includes('basement') || combined.includes('ژێرزەمین') || combined.includes('-1')) {
+      floorText = isKu ? 'ژێرزەمین (-1)' : 'Basement (-1)';
+      floorTextEn = 'Basement (-1)';
+    } else if (combined.includes('ground') || combined.includes('زەمینی') || combined.includes(' (0)')) {
+      floorText = isKu ? 'قاتی زەمینی (0)' : 'Ground Floor (0)';
+      floorTextEn = 'Ground Floor (0)';
+    } else if (combined.includes('first') || combined.includes('1st') || combined.includes('یەکەم') || combined.includes(' (1)')) {
+      floorText = isKu ? 'قاتی یەکەم (1)' : 'First Floor (1)';
+      floorTextEn = 'First Floor (1)';
+    } else if (combined.includes('second') || combined.includes('2nd') || combined.includes('دووەم') || combined.includes(' (2)')) {
+      floorText = isKu ? 'قاتی دووەم (2)' : 'Second Floor (2)';
+      floorTextEn = 'Second Floor (2)';
+    } else if (combined.includes('third') || combined.includes('3rd') || combined.includes('سێیەم') || combined.includes(' (3)')) {
+      floorText = isKu ? 'قاتی سێیەم (3)' : 'Third Floor (3)';
+      floorTextEn = 'Third Floor (3)';
+    } else if (combined.includes('roof') || combined.includes('سەربان') || combined.includes(' (4)')) {
+      floorText = isKu ? 'سەربان (4)' : 'Roof Top (4)';
+      floorTextEn = 'Roof Top (4)';
+    }
+  }
+
+  const label = isKu && floorText && floorTextEn && floorText !== floorTextEn
+    ? `${floorText} • ${floorTextEn}`
+    : (floorText || floorTextEn);
+
+  if (label && !planName.toLowerCase().includes(floorTextEn?.toLowerCase() || '')) {
+    return `${planName} (${label})`;
+  }
+
+  return planName;
+}
+
+

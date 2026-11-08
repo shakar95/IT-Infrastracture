@@ -32,6 +32,7 @@ import { useZones } from '../utils/zoneManager';
 import { useEstateZones } from '../utils/estateZoneManager';
 import { useRacks } from '../utils/rackManager';
 import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
+import { getFloorPlanDisplayLabel } from '../utils/floorLevels';
 
 export default function DeviceProvisioning({
   devices = [],
@@ -732,7 +733,7 @@ export default function DeviceProvisioning({
                     <option value="">{isKu ? 'دیاری نەکراوە (دانانی لە دوایدا)' : 'None (Unassigned)'}</option>
                     {floorPlans.map((fp) => (
                       <option key={fp.id} value={fp.id}>
-                        {isKu ? fp.name_ku : fp.name} {fp.zone ? `[${formatEstateZone(fp.zone, lang)}]` : ''}
+                        {getFloorPlanDisplayLabel(fp, lang)}
                       </option>
                     ))}
                   </select>

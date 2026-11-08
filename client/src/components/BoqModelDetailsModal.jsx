@@ -37,6 +37,7 @@ import QuickAddCategoryModal from './QuickAddCategoryModal';
 import { useRacks } from '../utils/rackManager';
 import RackManagerModal from './RackManagerModal';
 import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
+import { getFloorPlanDisplayLabel } from '../utils/floorLevels';
 
 // Helper function to compress and resize image files before saving
 const compressImageFile = (file, maxWidth = 1200, maxHeight = 900, quality = 0.85) => {
@@ -745,7 +746,7 @@ export default function BoqModelDetailsModal({
                       <option value="">{isKu ? 'دیاری نەکراوە (دانانی لە دوایدا)' : 'None (Unassigned)'}</option>
                       {floorPlans.map((fp) => (
                         <option key={fp.id} value={fp.id}>
-                          {isKu ? fp.name_ku : fp.name} ({fp.zone_type})
+                          {getFloorPlanDisplayLabel(fp, lang)}
                         </option>
                       ))}
                     </select>
@@ -926,7 +927,7 @@ export default function BoqModelDetailsModal({
                                 {dev.ip_address || <span className="text-slate-600 italic">Unassigned</span>}
                               </td>
                               <td className="px-4 py-3 text-slate-300 whitespace-nowrap font-sans text-xs">
-                                <div>{fp ? (isKu ? fp.name_ku : fp.name) : 'No Map'}</div>
+                                <div className="font-medium text-white">{fp ? getFloorPlanDisplayLabel(fp, lang) : (isKu ? 'بێ نەخشە' : 'No Map')}</div>
                                 <div className="text-[10px] text-slate-500 font-mono">
                                   {dev.rack_unit ? `Rack: ${dev.rack_unit}` : dev.switch_port ? `Port: ${dev.switch_port}` : 'Field'}
                                 </div>

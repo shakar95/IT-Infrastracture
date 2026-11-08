@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
+import { getFloorPlanDisplayLabel } from '../utils/floorLevels';
 
 export default function DeviceDetailsModal({
   device,
@@ -424,7 +425,7 @@ export default function DeviceDetailsModal({
                     </h3>
                   </div>
                   <span className="text-xs font-mono text-slate-400">
-                    Level {floorPlan.floor_level} • {isKu ? floorPlan.name_ku : floorPlan.name}
+                    {getFloorPlanDisplayLabel(floorPlan, lang)}
                   </span>
                 </div>
 
