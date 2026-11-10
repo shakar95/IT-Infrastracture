@@ -50,12 +50,46 @@ router.get('/', async (req, res) => {
     const targetProject = project_id || 'proj-sitak';
 
     if (isSupabaseConfigured) {
-      let query = supabase.from('devices').select('*, boq_models(*, categories(*)), floor_plans(*)').order('created_at', { ascending: false });
+      let query = supabase
+        .from('devices')
+        .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
+        .order('created_at', { ascending: false });
       if (status) query = query.eq('installation_status', status);
       if (floor_plan_id) query = query.eq('floor_plan_id', floor_plan_id);
       if (zone) query = query.eq('placement_zone', zone);
       
-      const { data, error } = await query;
+      let { data, error } = await query;
+
+      // Resilient fallback: if the explicit foreign key join fails, fetch devices and join in-memory
+      if (error) {
+        console.warn('Supabase embedded devices query failed, attempting decoupled join:', error.message);
+        try {
+          let fallbackDevQuery = supabase.from('devices').select('*').order('created_at', { ascending: false });
+          if (status) fallbackDevQuery = fallbackDevQuery.eq('installation_status', status);
+          if (floor_plan_id) fallbackDevQuery = fallbackDevQuery.eq('floor_plan_id', floor_plan_id);
+          if (zone) fallbackDevQuery = fallbackDevQuery.eq('placement_zone', zone);
+
+          const [devsRes, modelsRes, fpsRes] = await Promise.all([
+            fallbackDevQuery,
+            supabase.from('boq_models').select('*, categories(*)'),
+            supabase.from('floor_plans').select('*'),
+          ]);
+
+          if (!devsRes.error && devsRes.data) {
+            const modelMap = new Map((modelsRes.data || []).map((m) => [m.id, m]));
+            const fpMap = new Map((fpsRes.data || []).map((fp) => [fp.id, fp]));
+            data = devsRes.data.map((d) => ({
+              ...d,
+              boq_models: modelMap.get(d.boq_model_id) || null,
+              floor_plans: fpMap.get(d.floor_plan_id) || null,
+            }));
+            error = null;
+          }
+        } catch (fallbackErr) {
+          console.error('Decoupled fallback also failed:', fallbackErr.message);
+        }
+      }
+
       if (!error && data) {
         let result = data.map((d) => formatDeviceOutput(d));
 
@@ -135,12 +169,26 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
     if (isSupabaseConfigured) {
-      const { data: d, error } = await supabase
+      let { data: d, error } = await supabase
         .from('devices')
-        .select('*, boq_models(*, categories(*)), floor_plans(*)')
+        .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
         .eq('id', id)
-        .single();
+        .maybeSingle();
+
+      if (error || !d) {
+        // Fallback: decoupled fetch
+        const { data: rawDev } = await supabase.from('devices').select('*').eq('id', id).maybeSingle();
+        if (rawDev) {
+          const [{ data: model }, { data: fp }] = await Promise.all([
+            supabase.from('boq_models').select('*, categories(*)').eq('id', rawDev.boq_model_id).maybeSingle(),
+            rawDev.floor_plan_id ? supabase.from('floor_plans').select('*').eq('id', rawDev.floor_plan_id).maybeSingle() : Promise.resolve({ data: null }),
+          ]);
+          return res.json(formatDeviceOutput({ ...rawDev, boq_models: model, floor_plans: fp }));
+        }
+      }
+
       if (error) throw error;
+      if (!d) return res.status(404).json({ error: 'Device not found' });
       return res.json(formatDeviceOutput(d));
     }
 
@@ -233,7 +281,7 @@ router.post('/', async (req, res) => {
       let { data, error } = await supabase
         .from('devices')
         .insert([currentPayload])
-        .select('*, boq_models(*, categories(*)), floor_plans(*)')
+        .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
         .single();
 
       // Graceful fallback 1: If new connection columns don't exist in Supabase schema cache yet
@@ -244,7 +292,7 @@ router.post('/', async (req, res) => {
         delete currentPayload.connected_socket_model_id;
         delete currentPayload.patch_panel_name;
         delete currentPayload.patch_panel_port;
-        const retryRes = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        const retryRes = await supabase.from('devices').insert([currentPayload]).select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)').single();
         data = retryRes.data;
         error = retryRes.error;
       }
@@ -253,7 +301,7 @@ router.post('/', async (req, res) => {
       if (error && (error.message?.includes('project_id') || error.message?.includes('zone') || error.code === 'PGRST204')) {
         delete currentPayload.project_id;
         delete currentPayload.zone;
-        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)').single();
         data = retryResult.data;
         error = retryResult.error;
       }
@@ -261,7 +309,7 @@ router.post('/', async (req, res) => {
       // Graceful fallback 3: If custom_label_id has NOT NULL or UNIQUE constraint before migration is executed
       if (error && (error.code === '23502' || error.code === '23505') && !finalLabel) {
         currentPayload.custom_label_id = `UNLABELED-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)').single();
         data = retryResult.data;
         error = retryResult.error;
       }
@@ -357,7 +405,7 @@ router.put('/:id', async (req, res) => {
         .from('devices')
         .update(deviceUpdatePayload)
         .eq('id', id)
-        .select('*, boq_models(*, categories(*)), floor_plans(*)')
+        .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
         .single();
 
       // Graceful fallback 1: If new connection columns don't exist in Supabase schema cache yet
@@ -368,7 +416,7 @@ router.put('/:id', async (req, res) => {
         delete deviceUpdatePayload.connected_socket_model_id;
         delete deviceUpdatePayload.patch_panel_name;
         delete deviceUpdatePayload.patch_panel_port;
-        const retryRes = await supabase.from('devices').update(deviceUpdatePayload).eq('id', id).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        const retryRes = await supabase.from('devices').update(deviceUpdatePayload).eq('id', id).select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)').single();
         data = retryRes.data;
         error = retryRes.error;
       }
@@ -380,7 +428,7 @@ router.put('/:id', async (req, res) => {
           .from('devices')
           .update(deviceUpdatePayload)
           .eq('id', id)
-          .select('*, boq_models(*, categories(*)), floor_plans(*)')
+          .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
           .single();
         data = retryResult.data;
         error = retryResult.error;
@@ -393,7 +441,7 @@ router.put('/:id', async (req, res) => {
           .from('devices')
           .update(deviceUpdatePayload)
           .eq('id', id)
-          .select('*, boq_models(*, categories(*)), floor_plans(*)')
+          .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)')
           .single();
         data = retryResult.data;
         error = retryResult.error;
@@ -459,7 +507,7 @@ router.patch('/:id/position', async (req, res) => {
     if (isSupabaseConfigured) {
       try {
         const [{ data: d }, { data: fp }] = await Promise.all([
-          supabase.from('devices').select('*, boq_models(*)').eq('id', id).maybeSingle(),
+          supabase.from('devices').select('*, boq_models!devices_boq_model_id_fkey(*)').eq('id', id).maybeSingle(),
           floor_plan_id ? supabase.from('floor_plans').select('*').eq('id', floor_plan_id).maybeSingle() : Promise.resolve({ data: null }),
         ]);
         device = d;

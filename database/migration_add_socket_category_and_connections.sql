@@ -72,3 +72,4 @@ SELECT column_name, data_type, is_nullable
 FROM information_schema.columns 
 WHERE table_name = 'devices' 
   AND column_name IN ('custom_label_id', 'connection_type', 'connected_socket_id', 'patch_panel_name');
+

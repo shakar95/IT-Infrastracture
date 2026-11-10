@@ -596,18 +596,65 @@ router.post('/versions/:id/restore', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = req.body || {};
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('boq_models').update(updates).eq('id', id).select().single();
+      const allowedColumns = [
+        'category_id',
+        'brand',
+        'model',
+        'description',
+        'total_qty',
+        'unit_cost',
+        'product_image_url',
+        'manual_pdf_url',
+        'allowed_zones',
+        'is_rack_mounted',
+        'rack_unit_size',
+        'custom_specs',
+        'project_id',
+      ];
+
+      const cleanUpdates = {};
+      for (const col of allowedColumns) {
+        if (updates[col] !== undefined) {
+          cleanUpdates[col] = updates[col];
+        }
+      }
+
+      // If category object or string was supplied instead of category_id
+      if (!cleanUpdates.category_id && updates.category) {
+        cleanUpdates.category_id = typeof updates.category === 'object' ? updates.category.id : updates.category;
+      }
+
+      cleanUpdates.updated_at = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from('boq_models')
+        .update(cleanUpdates)
+        .eq('id', id)
+        .select('*, categories(*)')
+        .single();
       if (error) throw error;
-      return res.json(data);
+      return res.json({
+        ...data,
+        category: data.categories || null,
+      });
     }
 
     const idx = mockBoqModels.findIndex((m) => m.id === id);
     if (idx === -1) return res.status(404).json({ error: 'BOQ Model not found' });
 
-    mockBoqModels[idx] = { ...mockBoqModels[idx], ...updates, updated_at: new Date().toISOString() };
+    const newCatId = updates.category_id || (typeof updates.category === 'object' ? updates.category.id : null);
+    const updatedCategory = newCatId ? mockCategories.find((c) => c.id === newCatId) : mockBoqModels[idx].category;
+
+    mockBoqModels[idx] = {
+      ...mockBoqModels[idx],
+      ...updates,
+      category_id: newCatId || mockBoqModels[idx].category_id,
+      category: updatedCategory || mockBoqModels[idx].category,
+      updated_at: new Date().toISOString(),
+    };
     res.json(mockBoqModels[idx]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -775,7 +822,7 @@ router.post('/:id/provision', async (req, res) => {
     }
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('devices').insert(newDevices).select('*, boq_models(*, categories(*)), floor_plans(*)');
+      const { data, error } = await supabase.from('devices').insert(newDevices).select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)');
       if (error) throw error;
       return res.status(201).json({
         success: true,

@@ -75,7 +75,7 @@ router.post('/troubleshoot', async (req, res) => {
       if (isSupabaseConfigured) {
         const { data: dbDev } = await supabase
           .from('devices')
-          .select('*, boq_models(*, categories(*))')
+          .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*))')
           .eq('id', device_id)
           .maybeSingle();
         if (dbDev) {
@@ -130,9 +130,26 @@ router.post('/chat', async (req, res) => {
     // Automatically load live devices and BOQ models if client context is empty
     if (!context.devices || !Array.isArray(context.devices) || context.devices.length === 0) {
       if (isSupabaseConfigured) {
-        const { data: dbDevs } = await supabase
+        let dbDevs = null;
+        const { data: dData, error: dErr } = await supabase
           .from('devices')
-          .select('*, boq_models(*, categories(*)), floor_plans(*)');
+          .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*)), floor_plans(*)');
+        if (!dErr && dData) {
+          dbDevs = dData;
+        } else {
+          const [{ data: rawDevs }, { data: allModels }, { data: allFps }] = await Promise.all([
+            supabase.from('devices').select('*'),
+            supabase.from('boq_models').select('*, categories(*)'),
+            supabase.from('floor_plans').select('*'),
+          ]);
+          const modelMap = new Map((allModels || []).map((m) => [m.id, m]));
+          const fpMap = new Map((allFps || []).map((f) => [f.id, f]));
+          dbDevs = (rawDevs || []).map((d) => ({
+            ...d,
+            boq_models: modelMap.get(d.boq_model_id) || null,
+            floor_plans: fpMap.get(d.floor_plan_id) || null,
+          }));
+        }
         if (dbDevs && dbDevs.length > 0) {
           context.devices = dbDevs.map((d) => ({
             ...d,

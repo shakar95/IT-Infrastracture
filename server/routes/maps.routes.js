@@ -46,12 +46,30 @@ router.get('/:id/devices', async (req, res) => {
     const { id } = req.params;
 
     if (isSupabaseConfigured) {
-      const [{ data: plan, error: pErr }, { data: devs, error: dErr }] = await Promise.all([
-        supabase.from('floor_plans').select('*').eq('id', id).single(),
-        supabase.from('devices').select('*, boq_models(*, categories(*))').eq('floor_plan_id', id).not('pos_x', 'is', null),
-      ]);
-      if (pErr) return res.status(404).json({ error: 'Floor plan not found' });
-      if (dErr) throw dErr;
+      const { data: plan, error: pErr } = await supabase.from('floor_plans').select('*').eq('id', id).single();
+      if (pErr || !plan) return res.status(404).json({ error: 'Floor plan not found' });
+
+      let devs = null;
+      const { data: devData, error: dErr } = await supabase
+        .from('devices')
+        .select('*, boq_models!devices_boq_model_id_fkey(*, categories(*))')
+        .eq('floor_plan_id', id)
+        .not('pos_x', 'is', null);
+
+      if (!dErr && devData) {
+        devs = devData;
+      } else {
+        // Fallback: fetch devices and models separately
+        const [{ data: rawDevs }, { data: allModels }] = await Promise.all([
+          supabase.from('devices').select('*').eq('floor_plan_id', id).not('pos_x', 'is', null),
+          supabase.from('boq_models').select('*, categories(*)'),
+        ]);
+        const modelMap = new Map((allModels || []).map((m) => [m.id, m]));
+        devs = (rawDevs || []).map((d) => ({
+          ...d,
+          boq_models: modelMap.get(d.boq_model_id) || null,
+        }));
+      }
 
       return res.json({
         floor_plan: plan,

@@ -134,7 +134,28 @@ export default function App() {
   const handleUpdateBoqModel = async (id, updates) => {
     try {
       const updated = await api.updateBoqModel(id, updates);
-      setBoqModels((prev) => prev.map((m) => (m.id === id ? { ...m, ...updated } : m)));
+      setBoqModels((prev) =>
+        prev.map((m) => {
+          if (m.id !== id) return m;
+          const merged = { ...m, ...updated };
+          if (merged.category_id) {
+            merged.category = updated.category || categories.find((c) => c.id === merged.category_id) || m.category;
+          }
+          return merged;
+        })
+      );
+      setDevices((prev) =>
+        prev.map((d) => {
+          if (d.boq_model_id === id && d.boq_model) {
+            const updatedModel = { ...d.boq_model, ...updated };
+            if (updatedModel.category_id) {
+              updatedModel.category = updated.category || categories.find((c) => c.id === updatedModel.category_id) || updatedModel.category;
+            }
+            return { ...d, boq_model: updatedModel };
+          }
+          return d;
+        })
+      );
       return updated;
     } catch (err) {
       catchGuardrail(err);

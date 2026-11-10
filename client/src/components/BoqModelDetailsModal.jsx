@@ -102,6 +102,9 @@ export default function BoqModelDetailsModal({
   const t = translations[lang] || translations.en;
   const isKu = lang === 'ku';
 
+  // Active Category resolution
+  const currentCategory = categories.find((c) => c.id === (model?.category_id || category?.id)) || category || model?.category;
+
   // Devices provisioned for this specific BOQ model
   const modelDevices = devices.filter((d) => d.boq_model_id === model.id);
   const provisionedCount = modelDevices.length;
@@ -507,8 +510,8 @@ export default function BoqModelDetailsModal({
               <span
                 className="w-3.5 h-3.5 rounded-full ring-4 shadow-sm"
                 style={{
-                  backgroundColor: category?.color_code || '#3b82f6',
-                  ringColor: `${category?.color_code || '#3b82f6'}33`,
+                  backgroundColor: currentCategory?.color_code || '#3b82f6',
+                  ringColor: `${currentCategory?.color_code || '#3b82f6'}33`,
                 }}
               />
               <div>
@@ -517,7 +520,7 @@ export default function BoqModelDetailsModal({
                   <h2 className="text-lg sm:text-xl font-bold font-mono text-white tracking-wide">{model.model}</h2>
                 </div>
                 <p className="text-xs text-slate-400">
-                  {category ? (isKu ? category.name_ku : category.name) : 'ELV Category'}
+                  {currentCategory ? (isKu ? currentCategory.name_ku : currentCategory.name) : 'ELV Category'}
                   {model.is_rack_mounted && ` • ${model.rack_unit_size || 1}U Server Rack`}
                 </p>
               </div>

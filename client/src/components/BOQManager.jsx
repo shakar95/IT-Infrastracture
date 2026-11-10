@@ -120,7 +120,13 @@ export default function BOQManager({
   const handleUpdateModelAndInspect = async (id, updates) => {
     const updated = await onUpdateModel(id, updates);
     if (inspectingModel && inspectingModel.id === id) {
-      setInspectingModel((prev) => ({ ...prev, ...updates, ...updated }));
+      setInspectingModel((prev) => {
+        const merged = { ...prev, ...updates, ...updated };
+        if (merged.category_id) {
+          merged.category = updated?.category || categories.find((c) => c.id === merged.category_id) || merged.category;
+        }
+        return merged;
+      });
     }
     return updated;
   };
