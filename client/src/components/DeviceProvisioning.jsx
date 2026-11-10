@@ -205,6 +205,11 @@ export default function DeviceProvisioning({
   const handleFormSubmit = async (e) => {
     e.preventDefault();
 
+    const isSocket = deviceForm.connection_type === 'socket';
+    const isPatchPanel = deviceForm.connection_type === 'patch_panel';
+    const isSwitch = deviceForm.connection_type === 'switch';
+    const isRack = deviceForm.placement_zone === 'rack';
+
     const payload = {
       ...deviceForm,
       custom_label_id: deviceForm.custom_label_id.trim()
@@ -217,15 +222,19 @@ export default function DeviceProvisioning({
       gateway: deviceForm.gateway.trim() || '192.168.10.1',
       vlan_id: deviceForm.vlan_id ? Number(deviceForm.vlan_id) : 10,
       connection_type: deviceForm.connection_type || 'switch',
-      connected_socket_id: deviceForm.connected_socket_id || null,
-      connected_socket_label: deviceForm.connected_socket_label || null,
-      connected_socket_model_id: deviceForm.connected_socket_model_id || null,
-      patch_panel_name: deviceForm.patch_panel_name ? deviceForm.patch_panel_name.trim() : null,
-      patch_panel_port: deviceForm.patch_panel_port ? deviceForm.patch_panel_port.trim() : null,
-      switch_name: deviceForm.switch_name ? deviceForm.switch_name.trim() : null,
-      switch_port: deviceForm.switch_port ? deviceForm.switch_port.trim() : null,
-      rack_name: deviceForm.rack_name ? deviceForm.rack_name.trim() : null,
-      rack_unit: deviceForm.rack_unit ? deviceForm.rack_unit.trim() : null,
+      connected_socket_id: isSocket ? (deviceForm.connected_socket_id || null) : null,
+      connected_socket_label: isSocket ? (deviceForm.connected_socket_label || null) : null,
+      connected_socket_model_id: isSocket ? (deviceForm.connected_socket_model_id || null) : null,
+      patch_panel_name: isPatchPanel ? (deviceForm.patch_panel_name ? deviceForm.patch_panel_name.trim() : null) : null,
+      patch_panel_port: isPatchPanel ? (deviceForm.patch_panel_port ? deviceForm.patch_panel_port.trim() : null) : null,
+      switch_name: isSocket
+        ? (deviceForm.connected_socket_label ? `Socket: ${deviceForm.connected_socket_label}` : 'Socket')
+        : isPatchPanel
+        ? (deviceForm.patch_panel_name ? `PP: ${deviceForm.patch_panel_name.trim()}` : 'Patch Panel')
+        : (deviceForm.switch_name ? deviceForm.switch_name.trim() : null),
+      switch_port: isSwitch ? (deviceForm.switch_port ? deviceForm.switch_port.trim() : null) : (isPatchPanel ? (deviceForm.patch_panel_port ? deviceForm.patch_panel_port.trim() : null) : null),
+      rack_name: isRack && deviceForm.rack_name ? deviceForm.rack_name.trim() : null,
+      rack_unit: isRack && deviceForm.rack_unit ? deviceForm.rack_unit.trim() : null,
       floor_plan_id: deviceForm.floor_plan_id || null,
     };
 
@@ -431,13 +440,19 @@ export default function DeviceProvisioning({
                       {dev.connection_type === 'socket' || dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? (
                         <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
                           <Plug className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span>{dev.connected_socket_label || dev.switch_name?.replace('Socket:', '').trim() || 'Socket'}</span>
-                          {dev.switch_port && <span className="text-slate-400 font-mono text-[11px]">[{dev.switch_port}]</span>}
+                          <span>
+                            {isKu ? 'سۆکێت' : 'Socket'}{' '}
+                            {(() => {
+                              const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || dev.switch_port || '';
+                              const clean = raw.replace(/^Socket:?\s*/i, '').trim();
+                              return clean && clean.toLowerCase() !== 'socket' ? `[${clean}]` : '';
+                            })()}
+                          </span>
                         </div>
                       ) : dev.connection_type === 'patch_panel' || dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? (
                         <div className="flex items-center gap-1.5 text-xs text-purple-400 font-medium">
                           <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                          <span>{dev.patch_panel_name || dev.switch_name?.replace('PP:', '').trim() || 'Patch Panel'}</span>
+                          <span>{dev.patch_panel_name || dev.switch_name?.replace('PP:', '').trim() || (isKu ? 'پاچ پەناڵ' : 'Patch Panel')}</span>
                           {(dev.patch_panel_port || dev.switch_port) && (
                             <span className="text-amber-400 font-mono text-[11px]">[{dev.patch_panel_port || dev.switch_port}]</span>
                           )}
@@ -925,7 +940,8 @@ export default function DeviceProvisioning({
                           placement_zone: newZone,
                           rack_name: newZone === 'rack'
                             ? (deviceForm.rack_name || racks[0]?.name || 'IDF01')
-                            : deviceForm.rack_name,
+                            : '',
+                          rack_unit: newZone === 'rack' ? deviceForm.rack_unit : '',
                         });
                       }
                     }}
@@ -972,58 +988,62 @@ export default function DeviceProvisioning({
                 </div>
               </div>
 
-              {/* Server Rack & Rack Unit & Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* 1. Server Rack Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
-                      <Server className="w-3 h-3 text-blue-400" />
-                      <span>{isKu ? 'ڕاکی سێرڤەر (Rack)' : 'Server Rack'}</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsRackModalOpen(true)}
-                      className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition cursor-pointer"
-                    >
-                      <Settings2 className="w-2.5 h-2.5" />
-                      <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
-                    </button>
-                  </div>
-                  <select
-                    value={deviceForm.rack_name || ''}
-                    onChange={(e) => {
-                      if (e.target.value === '__manage__') {
-                        setIsRackModalOpen(true);
-                      } else {
-                        setDeviceForm({ ...deviceForm, rack_name: e.target.value });
-                      }
-                    }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-                  >
-                    <option value="">{isKu ? '— بێ دیاریکردنی ڕاک (Field) —' : '— None / Field Device —'}</option>
-                    {racks.map((r) => (
-                      <option key={r.id} value={r.name}>
-                        {isKu ? (r.nameKu || r.name) : r.name} ({r.totalUnits}U)
-                      </option>
-                    ))}
-                    <option value="__manage__" className="text-blue-400 font-semibold">
-                      {isKu ? '+ زیادکردن یان گۆڕینی ناوی ڕاکەکان...' : '+ Add / Rename Racks...'}
-                    </option>
-                  </select>
-                </div>
+              {/* Server Rack & Rack Unit & Status - Racks only shown if Installation Zone is "rack" */}
+              <div className={`grid grid-cols-1 ${deviceForm.placement_zone === 'rack' ? 'sm:grid-cols-3' : 'sm:grid-cols-1'} gap-3`}>
+                {deviceForm.placement_zone === 'rack' && (
+                  <>
+                    {/* 1. Server Rack Selector */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                          <Server className="w-3 h-3 text-blue-400" />
+                          <span>{isKu ? 'ڕاکی سێرڤەر (Rack)' : 'Server Rack'}</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsRackModalOpen(true)}
+                          className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold inline-flex items-center gap-0.5 transition cursor-pointer"
+                        >
+                          <Settings2 className="w-2.5 h-2.5" />
+                          <span>{isKu ? 'دەستکاری' : 'Manage'}</span>
+                        </button>
+                      </div>
+                      <select
+                        value={deviceForm.rack_name || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__manage__') {
+                            setIsRackModalOpen(true);
+                          } else {
+                            setDeviceForm({ ...deviceForm, rack_name: e.target.value });
+                          }
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="">{isKu ? '— بێ دیاریکردنی ڕاک (Field) —' : '— None / Field Device —'}</option>
+                        {racks.map((r) => (
+                          <option key={r.id} value={r.name}>
+                            {isKu ? (r.nameKu || r.name) : r.name} ({r.totalUnits}U)
+                          </option>
+                        ))}
+                        <option value="__manage__" className="text-blue-400 font-semibold">
+                          {isKu ? '+ زیادکردن یان گۆڕینی ناوی ڕاکەکان...' : '+ Add / Rename Racks...'}
+                        </option>
+                      </select>
+                    </div>
 
-                {/* 2. Rack Unit Position */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.rackUnitPos}</label>
-                  <input
-                    type="text"
-                    value={deviceForm.rack_unit}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, rack_unit: e.target.value })}
-                    placeholder="e.g. U14-U16"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                    {/* 2. Rack Unit Position */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">{t.rackUnitPos}</label>
+                      <input
+                        type="text"
+                        value={deviceForm.rack_unit}
+                        onChange={(e) => setDeviceForm({ ...deviceForm, rack_unit: e.target.value })}
+                        placeholder="e.g. U14-U16"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </>
+                )}
 
                 {/* 3. Installation Status */}
                 <div>

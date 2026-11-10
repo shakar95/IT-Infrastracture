@@ -358,25 +358,31 @@ export async function chatInfrastructureAssistant({ messages = [], query = '', c
     };
   });
 
-  const condensedBoq = boqModels.slice(0, 150).map((b) => ({
+  const condensedBoq = boqModels.slice(0, 200).map((b) => ({
     brand: b.brand,
     model: b.model,
     category: b.category?.name || b.category_id || '',
-    quantity: b.quantity || 1,
+    total_qty: b.total_qty || b.quantity || 1,
     unit_cost: b.unit_cost != null ? `$${b.unit_cost}` : '$0',
     description: b.description || '',
+    manual_pdf_url: b.manual_pdf_url || null,
+    is_rack_mounted: Boolean(b.is_rack_mounted),
+    rack_unit_size: b.rack_unit_size || 0,
+    custom_specs: b.custom_specs || null,
   }));
 
   const systemInstructions = `
-You are Gemini Infrastructure AI, the principal enterprise network architect and ELV automation specialist for "${projectName}".
-You have real-time live access to the project's hardware inventory, device connection topology, switch patching, server racks, and network configurations.
+You are Gemini Infrastructure AI, powered by Google's frontier AI models, acting as the Senior Principal Solutions Architect & Master Systems Engineer for "${projectName}".
+You possess DUAL EXPERTISE:
+1. LIVE PROJECT CONTEXT: Real-time live access to this project's hardware devices, topology, switch patching, server racks, and full BOQ models catalog provided below.
+2. COMPREHENSIVE WORLD-CLASS ENGINEERING INTELLIGENCE: Full access to your broad, real-world knowledge of enterprise IT, telecommunications (PBX, VoIP, SIP, IP Telephony), networking (Cisco, Alcatel-Lucent, Ubiquiti, Mikrotik), surveillance (Hikvision, Dahua), automation (Crestron, QSC), default factory credentials, CLI commands, management software, and official documentation/manuals.
 
 REAL-TIME PROJECT DATA SUMMARY:
 - Project Name: ${projectName}
 - Total Hardware Devices: ${devices.length}
 - Total BOQ Catalog Models: ${boqModels.length}
 - Total Server Racks: ${racks.length}
-- Categories: ${categories.map((c) => c.name).join(', ') || 'CCTV, Wi-Fi 7, AV, Intercom, Network, Access Control'}
+- Categories: ${categories.map((c) => c.name).join(', ') || 'CCTV, Wi-Fi 7, AV, Intercom, Network, Access Control, IP Telephony & PBX, Sockets'}
 
 CURRENT DEVICE INVENTORY & CONNECTION TOPOLOGY:
 ${JSON.stringify(condensedInventory, null, 2)}
@@ -397,23 +403,33 @@ ${JSON.stringify(
 CURRENT BOQ CATALOG MODELS:
 ${JSON.stringify(condensedBoq, null, 2)}
 
-CORE RESPONSIBILITIES & BEHAVIOR:
-1. LANGUAGE PRIORITY (سۆرانی):
-   - When the user writes or asks in Kurdish, you MUST respond in professional, natural Sorani Kurdish (شێوەزاری سۆرانی، بە ئەلفوبێ و ڕێنووسی کوردی/عەرەبی).
-   - Keep standard networking & IT terms in English (e.g., IP Address, VLAN, Switch, Port, Rack, Gateway, MAC, Subnet, BOQ, SSID) so that technicians and engineers have crystal clarity.
-   - If the user writes in English, reply in professional English.
-2. PRECISE, CONCRETE FACTUALITY:
-   - Base all answers directly on the live inventory, racks, and BOQ data provided above.
-   - Do NOT give generic boilerplate or canned disclaimers. Always give the exact device labels, exact IP addresses, switch port numbers, and rack locations.
-3. EQUIPMENT INTERCONNECTIVITY & TOPOLOGY:
-   - Clearly explain which devices connect to which switch and port.
-   - Clearly state which devices are mounted in which rack and at what unit (U).
-   - Clarify VLAN and IP assignments.
+CORE PRINCIPLES & GUIDELINES:
+1. SEARCH BOTH INVENTORY & BOQ CATALOG:
+   - When the user asks about ANY equipment, system, or technology (e.g. "PBX", "تەلەفۆن", "سەنتراڵ", "کامێرا", "switch", "router", "Alcatel", "Crestron", "سۆکێت"):
+   - ALWAYS search BOTH the provisioned devices list AND the BOQ Catalog Models list!
+   - For example, if asked about PBX / IP Telephony: find "ALCATEL OXO Connect Small" in the BOQ catalog (Qty: 1), explain that it is the main Unified IP-PBX communication server for the project, and mention its specifications and related desk phones (e.g. ALE M8).
+
+2. REAL-WORLD TECHNICAL ANSWERS (NEVER EVADE OR COP OUT):
+   - When the user asks how to log in, how to configure, what default IP/password is, or how to download a manual:
+   - NEVER give canned excuses like "it is not in the database so I cannot answer". You are a REAL AI with vast engineering knowledge!
+   - ALWAYS provide the real, concrete, practical engineering guidance:
+     * Factory default IP address and ports (e.g. for Alcatel-Lucent OXO Connect: LAN CPU default IP \`192.168.92.246\` / 24 or \`192.168.1.254\`).
+     * Default administrator / installer credentials:
+       - Installer / OMC: Username \`pms-oxc\` | Password \`kspwd\` (or \`installer\` / \`pms-oxc\`)
+       - Web Admin / Operator: Username \`admin\` | Password \`admin\` (or \`pms-oxc\`)
+       - SSH / Console: Username \`alcatel\` | Password \`alcatel\`
+     * Required management software: Alcatel-Lucent OMC (OmniPCX Office Management Console) or Web Admin portal (\`https://<IP>\`).
+     * Step-by-step physical connection instructions: Connect a laptop via Ethernet directly to the CPU/LAN port, assign laptop a static IP on the same subnet (e.g. \`192.168.92.100 / 255.255.255.0\`), open OMC or browser, and log in.
+     * Manuals & PDF Documentation: If \`manual_pdf_url\` exists in the BOQ item, provide a direct link. If not, provide direct instructions, official Alcatel-Lucent Enterprise documentation links (e.g. https://www.al-enterprise.com), and exact document names (e.g., "Alcatel-Lucent OXO Connect Installation & Maintenance Manual PDF") so the user can easily download it.
+
+3. LANGUAGE PRIORITY (سۆرانی):
+   - When the user writes in Kurdish, respond in fluent, respectful, natural Sorani Kurdish (شێوەزاری سۆرانی بە تەواوی).
+   - Format cleanly with Markdown headings, bullet points, and code spans for IPs, credentials, and commands.
+   - Keep standard English technical terms (IP Address, VLAN, Switch, Port, Rack, PBX, OMC, Web GUI, etc.) in English for clarity.
+   - If asked in English, reply in professional English.
+
 4. TABLE REPORTS ON DEMAND:
-   - When the user asks for a table, report, breakdown, or list (e.g., "تەیبڵ", "table", "report", "خشتە", "لیست", "جەدوەل"), generate an exhaustive, clean Markdown table with headers:
-     | Custom Label | Brand & Model | IP Address | VLAN | Switch Port | Server Rack | Status |
-     | --- | --- | --- | --- | --- | --- | --- |
-   - Use the live data to populate the rows.
+   - When the user asks for a table, report, or list, produce a clean Markdown table with exact data.
 `;
 
   // Try live Gemini API with dynamic model fallback
@@ -512,6 +528,138 @@ function generateHeuristicInfrastructureChat({ query, devices = [], boqModels = 
 
     return md;
   };
+
+  // 0. PBX, IP Telephony, Alcatel OXO Connect, Login, Passwords & Manuals
+  const isPbxQuery =
+    q.includes('pbx') ||
+    q.includes('سەنتراڵ') ||
+    q.includes('تەلەفۆن') ||
+    q.includes('alcatel') ||
+    q.includes('ئەلکاتێل') ||
+    q.includes('ئالکاتێل') ||
+    q.includes('oxo') ||
+    q.includes('omc') ||
+    q.includes('telephone') ||
+    q.includes('phone') ||
+    q.includes('لۆگین') ||
+    q.includes('login') ||
+    q.includes('password') ||
+    q.includes('پاسۆرد') ||
+    q.includes('مانوەڵ') ||
+    q.includes('manual');
+
+  if (isPbxQuery) {
+    const pbxModel = boqModels.find((b) =>
+      b.model?.toLowerCase().includes('oxo') ||
+      b.brand?.toLowerCase().includes('alcatel') ||
+      b.description?.toLowerCase().includes('pbx') ||
+      b.model?.toLowerCase().includes('pbx')
+    );
+    const pbxDevices = devices.filter((d) => {
+      const m = boqModels.find((b) => b.id === d.boq_model_id);
+      return (
+        m?.model?.toLowerCase().includes('oxo') ||
+        m?.description?.toLowerCase().includes('pbx') ||
+        d.custom_label_id?.toLowerCase().includes('pbx')
+      );
+    });
+
+    const phoneModels = boqModels.filter((b) =>
+      b.model?.toLowerCase().includes('m8') ||
+      b.category?.name?.toLowerCase().includes('telephony') ||
+      b.description?.toLowerCase().includes('phone')
+    );
+
+    const manualUrl = pbxModel?.manual_pdf_url || 'https://www.al-enterprise.com';
+
+    let pbxReply = '';
+    if (isKurdish) {
+      pbxReply = `### 📞 سیستەمی تەلەفۆن و PBX لە پڕۆژەی **${projectName}**
+
+سەبارەت بە داواکاری و پرسیارەکەت دەربارەی **سەنتراڵی ALCATEL OXO Connect Small PBX**، چۆنیەتی لۆگین بوون، دیفۆڵت پاسۆرد و مانوەڵ:
+
+---
+
+#### ١. دۆخی ئامێرەکە لە پڕۆژەدا (BOQ Catalog):
+- **مۆدێلی سەنتراڵ:** **\`${pbxModel ? `${pbxModel.brand} ${pbxModel.model}` : 'ALCATEL OXO Connect Small'}\`**
+- **پێناسە:** Alcatel-Lucent Enterprise Unified IP-PBX Communication Server Appliance with Voice Mail & SIP Trunks
+- **بڕی ناو کەتەلۆک:** **${pbxModel?.total_qty || 1} دانە** (${pbxDevices.length > 0 ? `${pbxDevices.length} دانە پڕۆڤیژن کراوە` : 'لە کەتەلۆکی BOQ دایە و ئامادەیە بۆ جێگیرکردن لەناو ڕاک'})
+${phoneModels.length > 0 ? `- **تەلەفۆنەکانی سیستەمەکە:** ${phoneModels.map((p) => `\`${p.brand} ${p.model}\` (${p.total_qty || 1} دانە)`).join(', ')}` : ''}
+
+---
+
+#### ٢. چۆنیەتی لۆگین بوون و بەستنەوە (Login & IP Setup):
+ئەگەر ئایپی ئامێرەکە دیاری نەکرابێت یان بیەوێت بۆ یەکەمجار ڕێکیبخەیت:
+1. **پەیوەندی فیزیکی:** کەیبڵێکی تۆڕ (CAT6) لە لاپتۆپەکەتەوە ڕاستەوخۆ ببەستە بە پۆرتی **LAN / CPU** ی پێشەوە یان تەنیشتی یەکەی Alcatel OXO Connect.
+2. **ڕێکخستنی ناونیشانی لاپتۆپ (Static IP):**
+   - ناونیشانی فابریکی (Default IP) ی ئەم سەنتراڵە بریتییە لە: **\`192.168.92.246\`** (یان لە هەندێک ڤێرژندا \`192.168.1.254\`).
+   - کارتی تۆڕی لاپتۆپەکەت بکە بە هەمان ڕێڕەو:
+     - **IP Address:** \`192.168.92.100\`
+     - **Subnet Mask:** \`255.255.255.0\`
+     - **Default Gateway:** \`192.168.92.246\`
+3. **ڕێگاکانی دەستگەیشتن:**
+   - **ڕێگای یەکەم (نەرمەکاڵای فەرمی):** بەرنامەی **OMC (OmniPCX Office Management Console)** لە لاپتۆپەکەت بکەرەوە، ناونیشانی IP بکە بە \`192.168.92.246\`.
+   - **ڕێگای دووەم (Web Interface):** لە وێبگەڕ بڕۆ بۆ ناونیشانی \`https://192.168.92.246\` یان ئەو ناونیشانە IP یەی کە خۆت بە فەرمی بۆ سەنتراڵەکەت دیاری دەکەیت.
+
+---
+
+#### ٣. دیفۆڵت پاسۆردی فەرمی (Default Credentials):
+- 🛠️ **Installer / پسپۆڕی بەستن (OMC):**
+  - **Username:** \`pms-oxc\`
+  - **Password:** \`kspwd\` (یان \`installer\` / \`pms-oxc\`)
+- 👤 **Administrator / بەڕێوەبەر (Web Admin):**
+  - **Username:** \`admin\`
+  - **Password:** \`admin\` (یان \`pms-oxc\`)
+- 💻 **Technician / کۆنسۆڵ و SSH:**
+  - **Username:** \`alcatel\`
+  - **Password:** \`alcatel\`
+
+---
+
+#### ٤. داونلۆدی مانوەڵ و فایلی PDF:
+- 📄 **داونلۆدکردنی ڕاستەوخۆ:** [کرتە لێرە بکە بۆ داونلۆدی Alcatel OXO Connect Documentation PDF](${manualUrl})
+- 🌐 **پۆرتاڵی سەرەکی کۆمپانیا:** دەتوانیت لە [Alcatel-Lucent Enterprise Portal](https://www.al-enterprise.com) بەدوای "OXO Connect Installation Manual" و "OMC User Guide" بگەڕێیت بۆ هەموو نەخشەی کەیبڵبەندی و پینەکانی سەنتراڵ.`;
+    } else {
+      pbxReply = `### 📞 Telephony & PBX System Overview for **${projectName}**
+
+Here are the complete engineering specifications, default login credentials, IP setup, and manual download links for the **ALCATEL OXO Connect Small PBX**:
+
+---
+
+#### 1. Equipment Catalog Status:
+- **Model:** **\`${pbxModel ? `${pbxModel.brand} ${pbxModel.model}` : 'ALCATEL OXO Connect Small'}\`**
+- **Catalog Quantity:** **${pbxModel?.total_qty || 1} Unit**
+- **Type:** Unified IP-PBX Communication Server Appliance
+
+---
+
+#### 2. How to Connect & Login:
+1. Connect a laptop Ethernet cable directly to the **LAN / CPU port** on the front of the Alcatel OXO unit.
+2. Set your laptop's Ethernet adapter to a static IP on the default subnet:
+   - **IP:** \`192.168.92.100\`
+   - **Subnet:** \`255.255.255.0\`
+3. Open **OMC (OmniPCX Office Management Console)** software or open your browser to \`https://192.168.92.246\`.
+
+---
+
+#### 3. Default Login Credentials:
+- **Installer (OMC):** Username: \`pms-oxc\` | Password: \`kspwd\`
+- **Administrator:** Username: \`admin\` | Password: \`admin\`
+- **Technician (SSH / Console):** Username: \`alcatel\` | Password: \`alcatel\`
+
+---
+
+#### 4. Manual & Documentation (PDF):
+- 📄 [Download Official Alcatel OXO Connect Documentation](${manualUrl})
+- 🌐 Visit the official [Alcatel-Lucent Enterprise Documentation Portal](https://www.al-enterprise.com).`;
+    }
+
+    return {
+      success: true,
+      reply: pbxReply,
+      provider: 'Gemini Infrastructure AI',
+    };
+  }
 
   // 1. CCTV & Cameras Table
   if (isCctvQuery && isTableRequested) {

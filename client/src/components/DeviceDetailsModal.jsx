@@ -391,14 +391,21 @@ export default function DeviceDetailsModal({
                 </div>
                 <div className="text-sm font-bold text-white">
                   {device.connection_type === 'socket' || device.connected_socket_id || device.switch_name?.startsWith('Socket:') ? (
-                    <span className="text-emerald-400">{device.connected_socket_label || device.switch_name?.replace('Socket:', '').trim() || 'Socket'}</span>
+                    <span className="text-emerald-400">
+                      {isKu ? 'سۆکێت' : 'Socket'}{' '}
+                      {(() => {
+                        const raw = device.connected_socket_label || (device.switch_name?.startsWith('Socket:') ? device.switch_name.replace('Socket:', '').trim() : '') || '';
+                        const clean = raw.replace(/^Socket:?\s*/i, '').trim();
+                        return clean && clean.toLowerCase() !== 'socket' ? `[${clean}]` : '';
+                      })()}
+                    </span>
                   ) : device.connection_type === 'patch_panel' || device.patch_panel_name || device.switch_name?.startsWith('PP:') ? (
-                    <span className="text-purple-400">{device.patch_panel_name || device.switch_name?.replace('PP:', '').trim() || 'Patch Panel'}</span>
+                    <span className="text-purple-400">{device.patch_panel_name || device.switch_name?.replace('PP:', '').trim() || (isKu ? 'پاچ پەناڵ' : 'Patch Panel')}</span>
                   ) : (
                     device.switch_name || <span className="text-slate-500 italic">Not Patched</span>
                   )}
                 </div>
-                {(device.switch_port || device.patch_panel_port) && (
+                {device.connection_type !== 'socket' && (device.switch_port || device.patch_panel_port) && (
                   <div className="inline-block px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     {device.patch_panel_port || device.switch_port}
                   </div>

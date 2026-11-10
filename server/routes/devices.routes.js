@@ -10,16 +10,20 @@ export function formatDeviceOutput(d) {
   if (!d) return d;
   const isUnlabeled = !d.custom_label_id || d.custom_label_id.startsWith('UNLABELED-');
   const customFieldVals = (typeof d.custom_field_values === 'object' && d.custom_field_values) ? d.custom_field_values : {};
+  const connType = d.connection_type || customFieldVals.connection_type || (d.connected_socket_id || d.switch_name?.startsWith('Socket:') ? 'socket' : (d.patch_panel_name || d.switch_name?.startsWith('PP:') ? 'patch_panel' : 'switch'));
 
   return {
     ...d,
     custom_label_id: isUnlabeled ? '' : d.custom_label_id,
-    connection_type: d.connection_type || customFieldVals.connection_type || 'switch',
+    connection_type: connType,
     connected_socket_id: d.connected_socket_id || customFieldVals.connected_socket_id || null,
     connected_socket_label: d.connected_socket_label || customFieldVals.connected_socket_label || null,
     connected_socket_model_id: d.connected_socket_model_id || customFieldVals.connected_socket_model_id || null,
     patch_panel_name: d.patch_panel_name || customFieldVals.patch_panel_name || null,
     patch_panel_port: d.patch_panel_port || customFieldVals.patch_panel_port || null,
+    switch_port: connType === 'socket' ? null : (d.switch_port || null),
+    rack_name: d.placement_zone === 'rack' ? (d.rack_name || null) : (d.placement_zone ? null : d.rack_name),
+    rack_unit: d.placement_zone === 'rack' ? (d.rack_unit || null) : (d.placement_zone ? null : d.rack_unit),
     boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : (d.boq_model || null),
     floor_plan: d.floor_plans || d.floor_plan || null,
   };
@@ -350,10 +354,11 @@ router.put('/:id', async (req, res) => {
     let derivedSwitchName = updates.switch_name;
     let derivedSwitchPort = updates.switch_port;
     if (connection_type === 'socket') {
-      derivedSwitchName = updates.switch_name || (connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket');
+      derivedSwitchName = connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket';
+      derivedSwitchPort = null;
     } else if (connection_type === 'patch_panel') {
-      derivedSwitchName = updates.switch_name || (patch_panel_name ? `PP: ${patch_panel_name}` : 'Patch Panel');
-      derivedSwitchPort = updates.switch_port || patch_panel_port || null;
+      derivedSwitchName = patch_panel_name ? `PP: ${patch_panel_name}` : (updates.switch_name || 'Patch Panel');
+      derivedSwitchPort = patch_panel_port || updates.switch_port || null;
     }
 
     const custom_field_values = {
@@ -378,8 +383,8 @@ router.put('/:id', async (req, res) => {
         vlan_id: updates.vlan_id !== undefined ? (Number(updates.vlan_id) || 10) : undefined,
         switch_name: derivedSwitchName,
         switch_port: derivedSwitchPort,
-        rack_name: updates.rack_name,
-        rack_unit: updates.rack_unit,
+        rack_name: updates.placement_zone && updates.placement_zone !== 'rack' ? null : updates.rack_name,
+        rack_unit: updates.placement_zone && updates.placement_zone !== 'rack' ? null : updates.rack_unit,
         zone: updates.zone !== undefined ? (updates.zone || null) : undefined,
         placement_zone: updates.placement_zone,
         floor_plan_id: updates.floor_plan_id !== undefined ? (updates.floor_plan_id || null) : undefined,
@@ -390,11 +395,11 @@ router.put('/:id', async (req, res) => {
         notes: updates.notes,
         custom_field_values,
         connection_type,
-        connected_socket_id,
-        connected_socket_label,
-        connected_socket_model_id,
-        patch_panel_name,
-        patch_panel_port,
+        connected_socket_id: connection_type === 'socket' ? connected_socket_id : null,
+        connected_socket_label: connection_type === 'socket' ? connected_socket_label : null,
+        connected_socket_model_id: connection_type === 'socket' ? connected_socket_model_id : null,
+        patch_panel_name: connection_type === 'patch_panel' ? patch_panel_name : null,
+        patch_panel_port: connection_type === 'patch_panel' ? patch_panel_port : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -454,7 +459,22 @@ router.put('/:id', async (req, res) => {
     const idx = mockDevices.findIndex((d) => d.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Device not found' });
 
-    mockDevices[idx] = { ...mockDevices[idx], ...updates, custom_field_values, updated_at: new Date().toISOString() };
+    mockDevices[idx] = {
+      ...mockDevices[idx],
+      ...updates,
+      custom_field_values,
+      switch_name: derivedSwitchName,
+      switch_port: derivedSwitchPort,
+      rack_name: updates.placement_zone && updates.placement_zone !== 'rack' ? null : (updates.rack_name !== undefined ? updates.rack_name : mockDevices[idx].rack_name),
+      rack_unit: updates.placement_zone && updates.placement_zone !== 'rack' ? null : (updates.rack_unit !== undefined ? updates.rack_unit : mockDevices[idx].rack_unit),
+      connection_type,
+      connected_socket_id: connection_type === 'socket' ? connected_socket_id : null,
+      connected_socket_label: connection_type === 'socket' ? connected_socket_label : null,
+      connected_socket_model_id: connection_type === 'socket' ? connected_socket_model_id : null,
+      patch_panel_name: connection_type === 'patch_panel' ? patch_panel_name : null,
+      patch_panel_port: connection_type === 'patch_panel' ? patch_panel_port : null,
+      updated_at: new Date().toISOString(),
+    };
     res.json(formatDeviceOutput(mockDevices[idx]));
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1145,7 +1145,14 @@ export default function BoqModelDetailsModal({
                                   {dev.connection_type === 'socket' || dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? (
                                     <span className="text-emerald-400 flex items-center gap-1">
                                       <Plug className="w-3 h-3" />
-                                      <span>{dev.connected_socket_label || dev.switch_name?.replace('Socket:', '').trim() || 'Socket'}</span>
+                                      <span>
+                                        {isKu ? 'سۆکێت' : 'Socket'}{' '}
+                                        {(() => {
+                                          const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || dev.switch_port || '';
+                                          const clean = raw.replace(/^Socket:?\s*/i, '').trim();
+                                          return clean && clean.toLowerCase() !== 'socket' ? `[${clean}]` : '';
+                                        })()}
+                                      </span>
                                     </span>
                                   ) : dev.connection_type === 'patch_panel' || dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? (
                                     <span className="text-purple-400 flex items-center gap-1">
