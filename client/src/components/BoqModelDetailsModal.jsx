@@ -1142,31 +1142,45 @@ export default function BoqModelDetailsModal({
                               <td className="px-4 py-3 text-slate-300 whitespace-nowrap font-sans text-xs">
                                 <div className="font-medium text-white">{fp ? getFloorPlanDisplayLabel(fp, lang) : (isKu ? 'بێ نەخشە' : 'No Map')}</div>
                                 <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-                                  {dev.connection_type === 'socket' || dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? (
-                                    <span className="text-emerald-400 flex items-center gap-1">
-                                      <Plug className="w-3 h-3" />
-                                      <span>
-                                        {isKu ? 'سۆکێت' : 'Socket'}{' '}
-                                        {(() => {
-                                          const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || dev.switch_port || '';
-                                          const clean = raw.replace(/^Socket:?\s*/i, '').trim();
-                                          return clean && clean.toLowerCase() !== 'socket' ? `[${clean}]` : '';
-                                        })()}
-                                      </span>
-                                    </span>
-                                  ) : dev.connection_type === 'patch_panel' || dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? (
-                                    <span className="text-purple-400 flex items-center gap-1">
-                                      <Sliders className="w-3 h-3" />
-                                      <span>{dev.patch_panel_name || dev.switch_name?.replace('PP:', '').trim() || 'PP'}{dev.switch_port ? ` [${dev.switch_port}]` : ''}</span>
-                                    </span>
-                                  ) : dev.switch_name ? (
-                                    <span className="text-blue-400 flex items-center gap-1">
-                                      <Network className="w-3 h-3" />
-                                      <span>{dev.switch_name}{dev.switch_port ? ` [${dev.switch_port}]` : ''}</span>
-                                    </span>
-                                  ) : (
-                                    <span>{dev.rack_unit ? `Rack: ${dev.rack_unit}` : 'Field'}</span>
-                                  )}
+                                  {(() => {
+                                    const connType = dev.connection_type || (dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? 'patch_panel' : (dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? 'socket' : 'switch'));
+
+                                    if (connType === 'patch_panel') {
+                                      const ppName = dev.patch_panel_name || (dev.switch_name?.startsWith('PP:') ? dev.switch_name.replace('PP:', '').trim() : '') || (isKu ? 'پاچ پەناڵ' : 'PP');
+                                      const ppPort = dev.patch_panel_port || (dev.switch_port && !dev.switch_port.startsWith('PP:') ? dev.switch_port : '');
+                                      return (
+                                        <span className="text-purple-400 flex items-center gap-1">
+                                          <Sliders className="w-3 h-3" />
+                                          <span>{ppName}{ppPort ? ` [${ppPort}]` : ''}</span>
+                                        </span>
+                                      );
+                                    }
+
+                                    if (connType === 'socket') {
+                                      const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || '';
+                                      const clean = raw.replace(/^Socket:?\s*/i, '').trim();
+                                      return (
+                                        <span className="text-emerald-400 flex items-center gap-1">
+                                          <Plug className="w-3 h-3" />
+                                          <span>
+                                            {isKu ? 'سۆکێت' : 'Socket'}
+                                            {clean && clean.toLowerCase() !== 'socket' ? ` [${clean}]` : ''}
+                                          </span>
+                                        </span>
+                                      );
+                                    }
+
+                                    if (dev.switch_name) {
+                                      return (
+                                        <span className="text-blue-400 flex items-center gap-1">
+                                          <Network className="w-3 h-3" />
+                                          <span>{dev.switch_name}{dev.switch_port ? ` [${dev.switch_port}]` : ''}</span>
+                                        </span>
+                                      );
+                                    }
+
+                                    return <span>{dev.rack_unit ? `Rack: ${dev.rack_unit}` : 'Field'}</span>;
+                                  })()}
                                 </div>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">

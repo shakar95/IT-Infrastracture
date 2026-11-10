@@ -437,35 +437,51 @@ export default function DeviceProvisioning({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      {dev.connection_type === 'socket' || dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                          <Plug className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span>
-                            {isKu ? 'سۆکێت' : 'Socket'}{' '}
-                            {(() => {
-                              const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || dev.switch_port || '';
-                              const clean = raw.replace(/^Socket:?\s*/i, '').trim();
-                              return clean && clean.toLowerCase() !== 'socket' ? `[${clean}]` : '';
-                            })()}
-                          </span>
-                        </div>
-                      ) : dev.connection_type === 'patch_panel' || dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? (
-                        <div className="flex items-center gap-1.5 text-xs text-purple-400 font-medium">
-                          <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                          <span>{dev.patch_panel_name || dev.switch_name?.replace('PP:', '').trim() || (isKu ? 'پاچ پەناڵ' : 'Patch Panel')}</span>
-                          {(dev.patch_panel_port || dev.switch_port) && (
-                            <span className="text-amber-400 font-mono text-[11px]">[{dev.patch_panel_port || dev.switch_port}]</span>
-                          )}
-                        </div>
-                      ) : dev.switch_name ? (
-                        <div className="flex items-center gap-1.5 text-xs text-blue-300 font-medium">
-                          <Network className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                          <span>{dev.switch_name}</span>
-                          {dev.switch_port && <span className="text-amber-400 font-mono text-[11px]">[{dev.switch_port}]</span>}
-                        </div>
-                      ) : (
-                        <span className="text-slate-600 italic text-xs">{isKu ? 'نەبەستراوە' : 'Unpatched'}</span>
-                      )}
+                      {(() => {
+                        const connType = dev.connection_type || (dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? 'patch_panel' : (dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? 'socket' : 'switch'));
+
+                        if (connType === 'patch_panel') {
+                          const ppName = dev.patch_panel_name || (dev.switch_name?.startsWith('PP:') ? dev.switch_name.replace('PP:', '').trim() : '') || (isKu ? 'پاچ پەناڵ' : 'Patch Panel');
+                          const ppPort = dev.patch_panel_port || (dev.switch_port && !dev.switch_port.startsWith('PP:') ? dev.switch_port : '');
+                          return (
+                            <div className="flex items-center gap-1.5 text-xs text-purple-400 font-medium">
+                              <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <span>{ppName}</span>
+                              {ppPort && (
+                                <span className="text-amber-400 font-mono text-[11px]">[{ppPort}]</span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (connType === 'socket') {
+                          const raw = dev.connected_socket_label || (dev.switch_name?.startsWith('Socket:') ? dev.switch_name.replace('Socket:', '').trim() : '') || '';
+                          const clean = raw.replace(/^Socket:?\s*/i, '').trim();
+                          return (
+                            <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                              <Plug className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>
+                                {isKu ? 'سۆکێت' : 'Socket'}
+                                {clean && clean.toLowerCase() !== 'socket' ? ` [${clean}]` : ''}
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        if (dev.switch_name) {
+                          return (
+                            <div className="flex items-center gap-1.5 text-xs text-blue-300 font-medium">
+                              <Network className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <span>{dev.switch_name}</span>
+                              {dev.switch_port && (
+                                <span className="text-amber-400 font-mono text-[11px]">[{dev.switch_port}]</span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return <span className="text-slate-600 italic text-xs">{isKu ? 'نەبەستراوە' : 'Unpatched'}</span>;
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                       {dev.rack_name ? (

@@ -10,20 +10,64 @@ export function formatDeviceOutput(d) {
   if (!d) return d;
   const isUnlabeled = !d.custom_label_id || d.custom_label_id.startsWith('UNLABELED-');
   const customFieldVals = (typeof d.custom_field_values === 'object' && d.custom_field_values) ? d.custom_field_values : {};
-  const connType = d.connection_type || customFieldVals.connection_type || (d.connected_socket_id || d.switch_name?.startsWith('Socket:') ? 'socket' : (d.patch_panel_name || d.switch_name?.startsWith('PP:') ? 'patch_panel' : 'switch'));
+
+  // Strict Connection Type Resolution:
+  let connType = d.connection_type || customFieldVals.connection_type;
+  if (!connType) {
+    if (d.patch_panel_name || customFieldVals.patch_panel_name || d.switch_name?.startsWith('PP:')) {
+      connType = 'patch_panel';
+    } else if (d.connected_socket_id || customFieldVals.connected_socket_id || d.switch_name?.startsWith('Socket:')) {
+      connType = 'socket';
+    } else {
+      connType = 'switch';
+    }
+  }
+
+  const isSocket = connType === 'socket';
+  const isPatchPanel = connType === 'patch_panel';
+  const isSwitch = connType === 'switch';
+
+  const patchPanelName = isPatchPanel
+    ? (d.patch_panel_name !== undefined && d.patch_panel_name !== null
+        ? d.patch_panel_name
+        : (customFieldVals.patch_panel_name !== undefined && customFieldVals.patch_panel_name !== null
+            ? customFieldVals.patch_panel_name
+            : (d.switch_name?.startsWith('PP:') ? d.switch_name.replace('PP:', '').trim() : null)))
+    : null;
+
+  const patchPanelPort = isPatchPanel
+    ? (d.patch_panel_port !== undefined && d.patch_panel_port !== null
+        ? d.patch_panel_port
+        : (customFieldVals.patch_panel_port !== undefined && customFieldVals.patch_panel_port !== null
+            ? customFieldVals.patch_panel_port
+            : null))
+    : null;
+
+  const connectedSocketId = isSocket ? (d.connected_socket_id || customFieldVals.connected_socket_id || null) : null;
+  const connectedSocketLabel = isSocket ? (d.connected_socket_label || customFieldVals.connected_socket_label || null) : null;
+  const connectedSocketModelId = isSocket ? (d.connected_socket_model_id || customFieldVals.connected_socket_model_id || null) : null;
+
+  const switchName = isSocket
+    ? (connectedSocketLabel ? `Socket: ${connectedSocketLabel}` : 'Socket')
+    : isPatchPanel
+    ? (patchPanelName ? `PP: ${patchPanelName}` : 'Patch Panel')
+    : (d.switch_name || null);
+
+  const switchPort = isSwitch ? (d.switch_port || null) : (isPatchPanel ? patchPanelPort : null);
 
   return {
     ...d,
     custom_label_id: isUnlabeled ? '' : d.custom_label_id,
     connection_type: connType,
-    connected_socket_id: d.connected_socket_id || customFieldVals.connected_socket_id || null,
-    connected_socket_label: d.connected_socket_label || customFieldVals.connected_socket_label || null,
-    connected_socket_model_id: d.connected_socket_model_id || customFieldVals.connected_socket_model_id || null,
-    patch_panel_name: d.patch_panel_name || customFieldVals.patch_panel_name || null,
-    patch_panel_port: d.patch_panel_port || customFieldVals.patch_panel_port || null,
-    switch_port: connType === 'socket' ? null : (d.switch_port || null),
-    rack_name: d.placement_zone === 'rack' ? (d.rack_name || null) : (d.placement_zone ? null : d.rack_name),
-    rack_unit: d.placement_zone === 'rack' ? (d.rack_unit || null) : (d.placement_zone ? null : d.rack_unit),
+    connected_socket_id: connectedSocketId,
+    connected_socket_label: connectedSocketLabel,
+    connected_socket_model_id: connectedSocketModelId,
+    patch_panel_name: patchPanelName,
+    patch_panel_port: patchPanelPort,
+    switch_name: switchName,
+    switch_port: switchPort,
+    rack_name: d.placement_zone === 'rack' ? (d.rack_name || null) : null,
+    rack_unit: d.placement_zone === 'rack' ? (d.rack_unit || null) : null,
     boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : (d.boq_model || null),
     floor_plan: d.floor_plans || d.floor_plan || null,
   };
@@ -357,18 +401,21 @@ router.put('/:id', async (req, res) => {
       derivedSwitchName = connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket';
       derivedSwitchPort = null;
     } else if (connection_type === 'patch_panel') {
-      derivedSwitchName = patch_panel_name ? `PP: ${patch_panel_name}` : (updates.switch_name || 'Patch Panel');
-      derivedSwitchPort = patch_panel_port || updates.switch_port || null;
+      derivedSwitchName = patch_panel_name ? `PP: ${patch_panel_name}` : 'Patch Panel';
+      derivedSwitchPort = patch_panel_port || null;
+    } else {
+      derivedSwitchName = updates.switch_name || null;
+      derivedSwitchPort = updates.switch_port || null;
     }
 
     const custom_field_values = {
       ...(typeof updates.custom_field_values === 'object' && updates.custom_field_values ? updates.custom_field_values : {}),
-      ...(connection_type ? { connection_type } : {}),
-      ...(connected_socket_id !== undefined ? { connected_socket_id } : {}),
-      ...(connected_socket_label !== undefined ? { connected_socket_label } : {}),
-      ...(connected_socket_model_id !== undefined ? { connected_socket_model_id } : {}),
-      ...(patch_panel_name !== undefined ? { patch_panel_name } : {}),
-      ...(patch_panel_port !== undefined ? { patch_panel_port } : {}),
+      connection_type,
+      connected_socket_id: connection_type === 'socket' ? (connected_socket_id || null) : null,
+      connected_socket_label: connection_type === 'socket' ? (connected_socket_label || null) : null,
+      connected_socket_model_id: connection_type === 'socket' ? (connected_socket_model_id || null) : null,
+      patch_panel_name: connection_type === 'patch_panel' ? (patch_panel_name || null) : null,
+      patch_panel_port: connection_type === 'patch_panel' ? (patch_panel_port || null) : null,
     };
 
     if (isSupabaseConfigured) {
@@ -395,11 +442,11 @@ router.put('/:id', async (req, res) => {
         notes: updates.notes,
         custom_field_values,
         connection_type,
-        connected_socket_id: connection_type === 'socket' ? connected_socket_id : null,
-        connected_socket_label: connection_type === 'socket' ? connected_socket_label : null,
-        connected_socket_model_id: connection_type === 'socket' ? connected_socket_model_id : null,
-        patch_panel_name: connection_type === 'patch_panel' ? patch_panel_name : null,
-        patch_panel_port: connection_type === 'patch_panel' ? patch_panel_port : null,
+        connected_socket_id: connection_type === 'socket' ? (connected_socket_id || null) : null,
+        connected_socket_label: connection_type === 'socket' ? (connected_socket_label || null) : null,
+        connected_socket_model_id: connection_type === 'socket' ? (connected_socket_model_id || null) : null,
+        patch_panel_name: connection_type === 'patch_panel' ? (patch_panel_name || null) : null,
+        patch_panel_port: connection_type === 'patch_panel' ? (patch_panel_port || null) : null,
         updated_at: new Date().toISOString(),
       };
 
