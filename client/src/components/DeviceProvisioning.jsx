@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Cpu,
   Search,
@@ -22,6 +22,7 @@ import {
   Building2,
   Plug,
   Sliders,
+  AlertCircle,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
@@ -118,6 +119,135 @@ export default function DeviceProvisioning({
     return socketBoqModels.some((sm) => sm.id === d.boq_model_id);
   });
 
+  const [isCustomPatchPort, setIsCustomPatchPort] = useState(false);
+  const [isCustomSwitchPort, setIsCustomSwitchPort] = useState(false);
+
+  const normPort = (p) => {
+    if (!p && p !== 0) return '';
+    return String(p).trim().toLowerCase().replace(/^port\s*/i, '');
+  };
+
+  // 1. Occupied Sockets Map: socketId -> occupying device label
+  const occupiedSocketMap = useMemo(() => {
+    const map = new Map();
+    devices.forEach((d) => {
+      if (editingDevice && d.id === editingDevice.id) return;
+      const isSocket = d.connection_type === 'socket' || (!d.connection_type && d.connected_socket_id);
+      if (isSocket && d.connected_socket_id) {
+        map.set(d.connected_socket_id, d.custom_label_id || d.serial_number || `Device #${d.id.slice(0, 6)}`);
+      }
+    });
+    return map;
+  }, [devices, editingDevice]);
+
+  // Available sockets: exclude occupied sockets from the selection list
+  const availableSocketDevices = useMemo(() => {
+    return socketDevices.filter((s) => {
+      if (editingDevice && s.id === editingDevice.id) return false;
+      if (editingDevice && editingDevice.connected_socket_id === s.id) return true;
+      if (deviceForm.connected_socket_id === s.id) return true;
+      return !occupiedSocketMap.has(s.id);
+    });
+  }, [socketDevices, occupiedSocketMap, editingDevice, deviceForm.connected_socket_id]);
+
+  const socketConflict = deviceForm.connection_type === 'socket' && deviceForm.connected_socket_id
+    ? occupiedSocketMap.get(deviceForm.connected_socket_id)
+    : null;
+
+  // 2. Patch Panel Port Exclusivity
+  const knownPatchPanels = useMemo(() => {
+    const set = new Set(['PP-IDF01-24P', 'PP-IDF02-24P', 'PP-IDF03-24P', 'PP-IDF04-24P', 'PP-MAIN-MDF-48P']);
+    devices.forEach((d) => {
+      if (d.patch_panel_name) set.add(d.patch_panel_name.trim());
+      else if (d.switch_name?.startsWith('PP:')) set.add(d.switch_name.replace('PP:', '').trim());
+    });
+    return Array.from(set).filter(Boolean);
+  }, [devices]);
+
+  const occupiedPatchPorts = useMemo(() => {
+    const map = new Map();
+    const currentPP = (deviceForm.patch_panel_name || '').trim().toLowerCase();
+    if (!currentPP) return map;
+
+    devices.forEach((d) => {
+      if (editingDevice && d.id === editingDevice.id) return;
+      const isPP = d.connection_type === 'patch_panel' || (!d.connection_type && (d.patch_panel_name || d.switch_name?.startsWith('PP:')));
+      if (isPP) {
+        const ppName = (d.patch_panel_name || (d.switch_name?.startsWith('PP:') ? d.switch_name.replace('PP:', '') : '')).trim().toLowerCase();
+        if (ppName === currentPP) {
+          const port = d.patch_panel_port || (d.switch_port && !d.switch_port.startsWith('PP:') ? d.switch_port : null);
+          if (port) {
+            map.set(normPort(port), d.custom_label_id || d.serial_number || `Device #${d.id.slice(0, 6)}`);
+          }
+        }
+      }
+    });
+    return map;
+  }, [devices, editingDevice, deviceForm.patch_panel_name]);
+
+  const availablePatchPorts = useMemo(() => {
+    const totalPorts = deviceForm.patch_panel_name?.includes('48') ? 48 : 24;
+    const ports = [];
+    for (let i = 1; i <= totalPorts; i++) {
+      const pStr = String(i);
+      const isCurrent = editingDevice && normPort(editingDevice.patch_panel_port || editingDevice.switch_port) === pStr;
+      if (!occupiedPatchPorts.has(pStr) || isCurrent) {
+        ports.push(pStr);
+      }
+    }
+    return ports;
+  }, [deviceForm.patch_panel_name, occupiedPatchPorts, editingDevice]);
+
+  const patchConflict = deviceForm.connection_type === 'patch_panel' && (deviceForm.patch_panel_port || deviceForm.switch_port)
+    ? occupiedPatchPorts.get(normPort(deviceForm.patch_panel_port || deviceForm.switch_port))
+    : null;
+
+  // 3. Switch Port Exclusivity
+  const knownSwitches = useMemo(() => {
+    const set = new Set(['SW-CORE-RACK-48P', 'SW-EDGE-POOL-24P', 'SW-CCTV-SEC-24P', 'SW-POE-MAIN-48P']);
+    devices.forEach((d) => {
+      if (d.connection_type === 'switch' && d.switch_name && !d.switch_name.startsWith('Socket:') && !d.switch_name.startsWith('PP:')) {
+        set.add(d.switch_name.trim());
+      }
+    });
+    return Array.from(set).filter(Boolean);
+  }, [devices]);
+
+  const occupiedSwitchPorts = useMemo(() => {
+    const map = new Map();
+    const currentSW = (deviceForm.switch_name || '').trim().toLowerCase();
+    if (!currentSW) return map;
+
+    devices.forEach((d) => {
+      if (editingDevice && d.id === editingDevice.id) return;
+      const isSW = d.connection_type === 'switch' || (!d.connection_type && d.switch_name && !d.switch_name.startsWith('Socket:') && !d.switch_name.startsWith('PP:'));
+      if (isSW) {
+        const swName = (d.switch_name || '').trim().toLowerCase();
+        if (swName === currentSW && d.switch_port) {
+          map.set(normPort(d.switch_port), d.custom_label_id || d.serial_number || `Device #${d.id.slice(0, 6)}`);
+        }
+      }
+    });
+    return map;
+  }, [devices, editingDevice, deviceForm.switch_name]);
+
+  const availableSwitchPorts = useMemo(() => {
+    const totalPorts = deviceForm.switch_name?.includes('48') ? 48 : 24;
+    const ports = [];
+    for (let i = 1; i <= totalPorts; i++) {
+      const pStr = String(i);
+      const isCurrent = editingDevice && normPort(editingDevice.switch_port) === pStr;
+      if (!occupiedSwitchPorts.has(pStr) || isCurrent) {
+        ports.push(pStr);
+      }
+    }
+    return ports;
+  }, [deviceForm.switch_name, occupiedSwitchPorts, editingDevice]);
+
+  const switchConflict = deviceForm.connection_type === 'switch' && deviceForm.switch_port
+    ? occupiedSwitchPorts.get(normPort(deviceForm.switch_port))
+    : null;
+
   // Filtered devices
   const filteredDevices = devices.filter((d) => {
     const model = boqModels.find((m) => m.id === d.boq_model_id);
@@ -168,10 +298,17 @@ export default function DeviceProvisioning({
       notes: '',
     });
     setEditingDevice(null);
+    setIsCustomPatchPort(false);
+    setIsCustomSwitchPort(false);
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (dev) => {
+    const devPPPort = dev.patch_panel_port || (dev.switch_name?.startsWith('PP:') ? dev.switch_port : '');
+    const devSWPort = dev.switch_port || '';
+    setIsCustomPatchPort(Boolean(devPPPort && isNaN(Number(normPort(devPPPort)))));
+    setIsCustomSwitchPort(Boolean(devSWPort && isNaN(Number(normPort(devSWPort)))));
+
     setDeviceForm({
       boq_model_id: dev.boq_model_id,
       custom_label_id: dev.custom_label_id || '',
@@ -209,6 +346,19 @@ export default function DeviceProvisioning({
     const isPatchPanel = deviceForm.connection_type === 'patch_panel';
     const isSwitch = deviceForm.connection_type === 'switch';
     const isRack = deviceForm.placement_zone === 'rack';
+
+    if (isSocket && deviceForm.connected_socket_id && socketConflict) {
+      alert(isKu ? `⚠️ ناتوانرێت پاشەکەوت بکرێت: ئەم سۆکێتە پێشتر بە ئامێری [${socketConflict}] بەستراوەتەوە و ناتوانرێت بۆ دوو دیڤایس بەکاربهێنرێت!` : `Cannot save: Socket is already linked to device [${socketConflict}]!`);
+      return;
+    }
+    if (isPatchPanel && deviceForm.patch_panel_name && (deviceForm.patch_panel_port || deviceForm.switch_port) && patchConflict) {
+      alert(isKu ? `⚠️ ناتوانرێت پاشەکەوت بکرێت: ئەم پۆرتە لەسەر پاچ پەناڵ پێشتر بە ئامێری [${patchConflict}] بەستراوەتەوە و ناتوانرێت بۆ دوو دیڤایس بەکاربهێنرێت!` : `Cannot save: Patch panel port is already linked to device [${patchConflict}]!`);
+      return;
+    }
+    if (isSwitch && deviceForm.switch_name && deviceForm.switch_port && switchConflict) {
+      alert(isKu ? `⚠️ ناتوانرێت پاشەکەوت بکرێت: ئەم پۆرتە لەسەر سویچ پێشتر بە ئامێری [${switchConflict}] بەستراوەتەوە و ناتوانرێت بۆ دوو دیڤایس بەکاربهێنرێت!` : `Cannot save: Switch port is already linked to device [${switchConflict}]!`);
+      return;
+    }
 
     const payload = {
       ...deviceForm,
@@ -774,18 +924,29 @@ export default function DeviceProvisioning({
                             switch_name: chosenSocket?.custom_label_id ? `Socket: ${chosenSocket.custom_label_id}` : (deviceForm.switch_name || 'Socket'),
                           });
                         }}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 ${
+                          socketConflict ? 'border-rose-500/80 bg-rose-950/20' : 'border-slate-800'
+                        }`}
                       >
                         <option value="">{isKu ? '— دیاریکردنی سۆکێت —' : '— Select Specific Socket —'}</option>
-                        {socketDevices.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.custom_label_id ? `[${s.custom_label_id}]` : `[ID: ${s.id.slice(0, 8)}]`} - {s.floor_plan?.name || s.zone || 'Villa'} {s.notes ? `(${s.notes})` : ''}
-                          </option>
-                        ))}
+                        {availableSocketDevices.map((s) => {
+                          const isCurrent = editingDevice && editingDevice.connected_socket_id === s.id;
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {s.custom_label_id ? `[${s.custom_label_id}]` : `[ID: ${s.id.slice(0, 8)}]`} - {s.floor_plan?.name || s.zone || 'Villa'} {s.notes ? `(${s.notes})` : ''} {isCurrent ? (isKu ? '(ئەم ئامێرە)' : '(Current)') : ''}
+                            </option>
+                          );
+                        })}
                       </select>
-                      {socketDevices.length === 0 && (
+                      {socketConflict && (
+                        <div className="text-[11px] text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-lg p-2 mt-1.5 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isKu ? `⚠️ ئەم سۆکێتە پێشتر بۆ ئامێری [${socketConflict}] دانراوە و ناتوانرێت بۆ دوو ئامێر بەکاربێت!` : `⚠️ This socket is already linked to [${socketConflict}]!`}</span>
+                        </div>
+                      )}
+                      {availableSocketDevices.length === 0 && !socketConflict && (
                         <p className="text-[10px] text-amber-400 mt-1">
-                          {isKu ? '⚠️ هیچ سۆکێتێکی پرۆڤیژنکراو لەم جۆرە نەدۆزرایەوە، سەرەتا لە بەشی سۆکێت زیاد بکە.' : '⚠️ No provisioned socket instances found for this model yet.'}
+                          {isKu ? '⚠️ هیچ سۆکێتێکی بەردەست (بەکارنەهاتوو) نەدۆزرایەوە.' : '⚠️ No unassigned sockets available for this model.'}
                         </p>
                       )}
                     </div>
@@ -814,32 +975,86 @@ export default function DeviceProvisioning({
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
                       />
                       <datalist id="patch-panels-list">
-                        <option value="PP-IDF01-24P" />
-                        <option value="PP-IDF02-24P" />
-                        <option value="PP-IDF03-24P" />
-                        <option value="PP-IDF04-24P" />
-                        <option value="PP-MAIN-MDF-48P" />
+                        {knownPatchPanels.map((pp) => (
+                          <option key={pp} value={pp} />
+                        ))}
                       </datalist>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                        {t.patchPanelPort || (isKu ? 'ژمارەی پۆرت (Port)' : 'Port')}
-                      </label>
-                      <input
-                        type="text"
-                        value={deviceForm.patch_panel_port}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setDeviceForm({
-                            ...deviceForm,
-                            patch_panel_port: val,
-                            switch_port: val || deviceForm.switch_port,
-                          });
-                        }}
-                        placeholder="e.g. Port 12"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-purple-500"
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-medium text-slate-300">
+                          {t.patchPanelPort || (isKu ? 'ژمارەی پۆرت (Port)' : 'Port')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomPatchPort(!isCustomPatchPort)}
+                          className="text-[10px] text-purple-400 hover:text-purple-300 font-medium transition cursor-pointer"
+                        >
+                          {isCustomPatchPort ? (isKu ? '← لیستی پۆرتە بەردەستەکان' : '← Available Ports List') : (isKu ? 'دەستی / تر (Custom)...' : 'Manual / Custom Port...')}
+                        </button>
+                      </div>
+
+                      {!isCustomPatchPort ? (
+                        <select
+                          value={normPort(deviceForm.patch_panel_port)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '__custom__') {
+                              setIsCustomPatchPort(true);
+                            } else {
+                              setDeviceForm({
+                                ...deviceForm,
+                                patch_panel_port: val,
+                                switch_port: val || deviceForm.switch_port,
+                              });
+                            }
+                          }}
+                          className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-purple-500 cursor-pointer ${
+                            patchConflict ? 'border-rose-500/80 bg-rose-950/20' : 'border-slate-800'
+                          }`}
+                        >
+                          <option value="">{isKu ? '— هەڵبژاردنی پۆرتی بەتاڵ —' : '— Select Free Port —'}</option>
+                          {availablePatchPorts.map((p) => {
+                            const isCurrent = editingDevice && normPort(editingDevice.patch_panel_port || editingDevice.switch_port) === p;
+                            return (
+                              <option key={p} value={p}>
+                                Port {p} {isCurrent ? (isKu ? ' (ئەم ئامێرە)' : ' (Current)') : ''}
+                              </option>
+                            );
+                          })}
+                          <option value="__custom__">{isKu ? 'نووسینی دەستی (Custom)...' : 'Custom Port...'}</option>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={deviceForm.patch_panel_port}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDeviceForm({
+                              ...deviceForm,
+                              patch_panel_port: val,
+                              switch_port: val || deviceForm.switch_port,
+                            });
+                          }}
+                          placeholder="e.g. 2 or Port 12"
+                          className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-purple-500 ${
+                            patchConflict ? 'border-rose-500/80 bg-rose-950/20' : 'border-slate-800'
+                          }`}
+                        />
+                      )}
+
+                      {patchConflict && (
+                        <div className="text-[11px] text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-lg p-2 mt-1.5 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isKu ? `⚠️ پۆرت [${deviceForm.patch_panel_port}] پێشتر بۆ ئامێری [${patchConflict}] دانراوە!` : `⚠️ Port [${deviceForm.patch_panel_port}] is already linked to [${patchConflict}]!`}</span>
+                        </div>
+                      )}
+                      {availablePatchPorts.length === 0 && !isCustomPatchPort && deviceForm.patch_panel_name && (
+                        <p className="text-[10px] text-amber-400 mt-1">
+                          {isKu ? '⚠️ هەموو پۆرتەکانی ئەم پاچ پەناڵە بەستراونەتەوە و هیچی بەتاڵ نەماوە.' : '⚠️ All ports on this patch panel are occupied.'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -859,24 +1074,75 @@ export default function DeviceProvisioning({
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                       />
                       <datalist id="switches-list">
-                        <option value="SW-CORE-RACK-48P" />
-                        <option value="SW-EDGE-POOL-24P" />
-                        <option value="SW-CCTV-SEC-24P" />
-                        <option value="SW-POE-MAIN-48P" />
+                        {knownSwitches.map((sw) => (
+                          <option key={sw} value={sw} />
+                        ))}
                       </datalist>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                        {t.switchPortNumber || (isKu ? 'ژمارەی پۆرت' : 'Switch Port')}
-                      </label>
-                      <input
-                        type="text"
-                        value={deviceForm.switch_port}
-                        onChange={(e) => setDeviceForm({ ...deviceForm, switch_port: e.target.value })}
-                        placeholder="e.g. Port 14 or Gi1/0/14"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-blue-500"
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-medium text-slate-300">
+                          {t.switchPortNumber || (isKu ? 'ژمارەی پۆرت' : 'Switch Port')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomSwitchPort(!isCustomSwitchPort)}
+                          className="text-[10px] text-blue-400 hover:text-blue-300 font-medium transition cursor-pointer"
+                        >
+                          {isCustomSwitchPort ? (isKu ? '← لیستی پۆرتە بەردەستەکان' : '← Available Ports List') : (isKu ? 'دەستی / تر (Custom)...' : 'Manual / Custom Port...')}
+                        </button>
+                      </div>
+
+                      {!isCustomSwitchPort ? (
+                        <select
+                          value={normPort(deviceForm.switch_port)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '__custom__') {
+                              setIsCustomSwitchPort(true);
+                            } else {
+                              setDeviceForm({ ...deviceForm, switch_port: val });
+                            }
+                          }}
+                          className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-blue-500 cursor-pointer ${
+                            switchConflict ? 'border-rose-500/80 bg-rose-950/20' : 'border-slate-800'
+                          }`}
+                        >
+                          <option value="">{isKu ? '— هەڵبژاردنی پۆرتی بەتاڵ —' : '— Select Free Port —'}</option>
+                          {availableSwitchPorts.map((p) => {
+                            const isCurrent = editingDevice && normPort(editingDevice.switch_port) === p;
+                            return (
+                              <option key={p} value={p}>
+                                Port {p} {isCurrent ? (isKu ? ' (ئەم ئامێرە)' : ' (Current)') : ''}
+                              </option>
+                            );
+                          })}
+                          <option value="__custom__">{isKu ? 'نووسینی دەستی (Custom)...' : 'Custom Port...'}</option>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={deviceForm.switch_port}
+                          onChange={(e) => setDeviceForm({ ...deviceForm, switch_port: e.target.value })}
+                          placeholder="e.g. 14 or Gi1/0/14"
+                          className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-blue-500 ${
+                            switchConflict ? 'border-rose-500/80 bg-rose-950/20' : 'border-slate-800'
+                          }`}
+                        />
+                      )}
+
+                      {switchConflict && (
+                        <div className="text-[11px] text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-lg p-2 mt-1.5 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isKu ? `⚠️ پۆرت [${deviceForm.switch_port}] پێشتر بۆ ئامێری [${switchConflict}] دانراوە!` : `⚠️ Port [${deviceForm.switch_port}] is already linked to [${switchConflict}]!`}</span>
+                        </div>
+                      )}
+                      {availableSwitchPorts.length === 0 && !isCustomSwitchPort && deviceForm.switch_name && (
+                        <p className="text-[10px] text-amber-400 mt-1">
+                          {isKu ? '⚠️ هەموو پۆرتەکانی ئەم سویچە بەستراونەتەوە و هیچی بەتاڵ نەماوە.' : '⚠️ All ports on this switch are occupied.'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

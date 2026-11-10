@@ -91,6 +91,105 @@ async function getModelAndFloorPlan(boqModelId, floorPlanId) {
   };
 }
 
+// Port & Socket Exclusivity Helper - strictly prevent duplicate socket / patch port / switch port links
+export function findConnectionConflict({
+  deviceId,
+  connection_type,
+  connected_socket_id,
+  patch_panel_name,
+  patch_panel_port,
+  switch_name,
+  switch_port,
+  allDevices = [],
+}) {
+  const normPort = (p) => {
+    if (!p && p !== 0) return '';
+    return String(p).trim().toLowerCase().replace(/^port\s*/i, '');
+  };
+
+  const connType = connection_type || 'switch';
+
+  if (connType === 'socket' && connected_socket_id) {
+    const existing = allDevices.find((d) => {
+      if (deviceId && d.id === deviceId) return false;
+      const dConn = d.connection_type || d.custom_field_values?.connection_type || (d.connected_socket_id ? 'socket' : (d.patch_panel_name ? 'patch_panel' : 'switch'));
+      if (dConn === 'socket') {
+        const dSockId = d.connected_socket_id || d.custom_field_values?.connected_socket_id;
+        return dSockId && dSockId === connected_socket_id;
+      }
+      return false;
+    });
+
+    if (existing) {
+      const label = existing.custom_label_id || existing.serial_number || `Device #${existing.id.slice(0, 6)}`;
+      return {
+        type: 'socket',
+        conflictDevice: existing,
+        message_ku: `ئەم سۆکێتە پێشتر بە ئامێری [${label}] بەستراوەتەوە و ناتوانرێت بۆ دوو ئامێر بەکاربھێنرێت.`,
+        message_en: `This socket is already connected to device [${label}] and cannot be linked to multiple devices.`,
+      };
+    }
+  }
+
+  if (connType === 'patch_panel' && patch_panel_name && (patch_panel_port || switch_port)) {
+    const targetPP = patch_panel_name.trim().toLowerCase();
+    const targetPort = normPort(patch_panel_port || switch_port);
+
+    if (targetPort) {
+      const existing = allDevices.find((d) => {
+        if (deviceId && d.id === deviceId) return false;
+        const dConn = d.connection_type || d.custom_field_values?.connection_type || (d.patch_panel_name || d.switch_name?.startsWith('PP:') ? 'patch_panel' : 'switch');
+        if (dConn === 'patch_panel') {
+          const dPP = (d.patch_panel_name || d.custom_field_values?.patch_panel_name || (d.switch_name?.startsWith('PP:') ? d.switch_name.replace('PP:', '') : '')).trim().toLowerCase();
+          const dPort = normPort(d.patch_panel_port || d.custom_field_values?.patch_panel_port || d.switch_port);
+          return dPP === targetPP && dPort === targetPort;
+        }
+        return false;
+      });
+
+      if (existing) {
+        const label = existing.custom_label_id || existing.serial_number || `Device #${existing.id.slice(0, 6)}`;
+        return {
+          type: 'patch_panel',
+          conflictDevice: existing,
+          message_ku: `پۆرتی [${patch_panel_port || switch_port}] لەسەر پاچ پەناڵی [${patch_panel_name}] پێشتر بۆ ئامێری [${label}] بەکارھاتووە و ناتوانرێت دووبارە بەکاربهێنرێت.`,
+          message_en: `Port [${patch_panel_port || switch_port}] on patch panel [${patch_panel_name}] is already connected to device [${label}].`,
+        };
+      }
+    }
+  }
+
+  if (connType === 'switch' && switch_name && switch_port) {
+    const targetSW = switch_name.trim().toLowerCase();
+    const targetPort = normPort(switch_port);
+
+    if (targetPort) {
+      const existing = allDevices.find((d) => {
+        if (deviceId && d.id === deviceId) return false;
+        const dConn = d.connection_type || d.custom_field_values?.connection_type || (d.switch_name && !d.switch_name.startsWith('Socket:') && !d.switch_name.startsWith('PP:') ? 'switch' : null);
+        if (dConn === 'switch') {
+          const dSW = (d.switch_name || '').trim().toLowerCase();
+          const dPort = normPort(d.switch_port);
+          return dSW === targetSW && dPort === targetPort;
+        }
+        return false;
+      });
+
+      if (existing) {
+        const label = existing.custom_label_id || existing.serial_number || `Device #${existing.id.slice(0, 6)}`;
+        return {
+          type: 'switch',
+          conflictDevice: existing,
+          message_ku: `پۆرتی [${switch_port}] لەسەر سویچی [${switch_name}] پێشتر بۆ ئامێری [${label}] بەکارھاتووە و ناتوانرێت دووبارە بەکاربهێنرێت.`,
+          message_en: `Port [${switch_port}] on switch [${switch_name}] is already connected to device [${label}].`,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 // GET all devices (with optional filters)
 router.get('/', async (req, res) => {
   try {
@@ -261,7 +360,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const deviceData = req.body;
-    const { model } = await getModelAndFloorPlan(deviceData.boq_model_id, deviceData.floor_plan_id);
+    const { model, allDevices } = await getModelAndFloorPlan(deviceData.boq_model_id, deviceData.floor_plan_id);
 
     // Keep custom_label_id blank if left empty by the user - do not auto-generate fake labels!
     const rawLabel = (deviceData.custom_label_id || '').trim();
@@ -278,9 +377,28 @@ router.post('/', async (req, res) => {
     let derivedSwitchPort = deviceData.switch_port || null;
     if (connection_type === 'socket') {
       derivedSwitchName = deviceData.switch_name || (connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket');
+      derivedSwitchPort = null;
     } else if (connection_type === 'patch_panel') {
       derivedSwitchName = deviceData.switch_name || (patch_panel_name ? `PP: ${patch_panel_name}` : 'Patch Panel');
       derivedSwitchPort = deviceData.switch_port || patch_panel_port || null;
+    }
+
+    // Check for duplicate port / socket conflicts
+    const conflict = findConnectionConflict({
+      connection_type,
+      connected_socket_id,
+      patch_panel_name,
+      patch_panel_port: derivedSwitchPort,
+      switch_name: derivedSwitchName,
+      switch_port: derivedSwitchPort,
+      allDevices,
+    });
+    if (conflict) {
+      return res.status(400).json({
+        error: 'CONNECTION_PORT_CONFLICT',
+        message: conflict.message_en,
+        message_ku: conflict.message_ku,
+      });
     }
 
     const custom_field_values = {
@@ -406,6 +524,35 @@ router.put('/:id', async (req, res) => {
     } else {
       derivedSwitchName = updates.switch_name || null;
       derivedSwitchPort = updates.switch_port || null;
+    }
+
+    // Check for duplicate port / socket conflicts
+    let allDevices = mockDevices;
+    if (isSupabaseConfigured) {
+      try {
+        const { data: dbDevs } = await supabase.from('devices').select('id, custom_label_id, serial_number, connection_type, switch_name, switch_port, patch_panel_name, patch_panel_port, connected_socket_id, custom_field_values');
+        if (dbDevs) allDevices = dbDevs;
+      } catch (err) {
+        console.warn('Failed to load all devices for conflict check:', err.message);
+      }
+    }
+
+    const conflict = findConnectionConflict({
+      deviceId: id,
+      connection_type,
+      connected_socket_id,
+      patch_panel_name,
+      patch_panel_port: derivedSwitchPort,
+      switch_name: derivedSwitchName,
+      switch_port: derivedSwitchPort,
+      allDevices,
+    });
+    if (conflict) {
+      return res.status(400).json({
+        error: 'CONNECTION_PORT_CONFLICT',
+        message: conflict.message_en,
+        message_ku: conflict.message_ku,
+      });
     }
 
     const custom_field_values = {
