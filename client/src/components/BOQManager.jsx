@@ -1070,6 +1070,7 @@ export default function BOQManager({
         model={inspectingModel}
         category={categories.find((c) => c.id === inspectingModel?.category_id)}
         categories={categories}
+        boqModels={boqModels}
         devices={devices}
         floorPlans={floorPlans}
         isOpen={Boolean(inspectingModel)}

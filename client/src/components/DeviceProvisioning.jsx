@@ -20,6 +20,8 @@ import {
   Info,
   Settings2,
   Building2,
+  Plug,
+  Sliders,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import DeviceDetailsModal from './DeviceDetailsModal';
@@ -78,6 +80,12 @@ export default function DeviceProvisioning({
     subnet_mask: '',
     gateway: '',
     vlan_id: '',
+    connection_type: 'switch', // 'socket' | 'patch_panel' | 'switch'
+    connected_socket_id: '',
+    connected_socket_label: '',
+    connected_socket_model_id: '',
+    patch_panel_name: '',
+    patch_panel_port: '',
     switch_name: '',
     switch_port: '',
     rack_name: '',
@@ -90,6 +98,26 @@ export default function DeviceProvisioning({
     notes: '',
   });
 
+  // Socket Category & Model Resolution
+  const socketCategory = categories.find((c) =>
+    c.name?.toLowerCase().includes('socket') ||
+    c.name_ku?.includes('سۆکێت') ||
+    c.icon_name === 'Plug'
+  );
+
+  const socketBoqModels = boqModels.filter((m) => {
+    if (socketCategory && m.category_id === socketCategory.id) return true;
+    const desc = `${m.brand} ${m.model} ${m.description || ''}`.toLowerCase();
+    return desc.includes('socket') || desc.includes('faceplate') || desc.includes('outlet') || desc.includes('سۆکێت');
+  });
+
+  const socketDevices = devices.filter((d) => {
+    if (deviceForm.connected_socket_model_id) {
+      return d.boq_model_id === deviceForm.connected_socket_model_id;
+    }
+    return socketBoqModels.some((sm) => sm.id === d.boq_model_id);
+  });
+
   // Filtered devices
   const filteredDevices = devices.filter((d) => {
     const model = boqModels.find((m) => m.id === d.boq_model_id);
@@ -100,11 +128,13 @@ export default function DeviceProvisioning({
 
     const s = search.toLowerCase();
     const matchesSearch =
-      d.custom_label_id.toLowerCase().includes(s) ||
+      (d.custom_label_id && d.custom_label_id.toLowerCase().includes(s)) ||
       (d.ip_address && d.ip_address.includes(s)) ||
       (d.mac_address && d.mac_address.toLowerCase().includes(s)) ||
       (d.serial_number && d.serial_number.toLowerCase().includes(s)) ||
       (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
+      (d.patch_panel_name && d.patch_panel_name.toLowerCase().includes(s)) ||
+      (d.connected_socket_label && d.connected_socket_label.toLowerCase().includes(s)) ||
       (model && (model.brand + ' ' + model.model).toLowerCase().includes(s));
 
     return matchesStatus && matchesZone && matchesEstateZone && matchesCategory && matchesSearch;
@@ -120,6 +150,12 @@ export default function DeviceProvisioning({
       subnet_mask: '',
       gateway: '',
       vlan_id: '',
+      connection_type: 'switch',
+      connected_socket_id: '',
+      connected_socket_label: '',
+      connected_socket_model_id: '',
+      patch_panel_name: '',
+      patch_panel_port: '',
       switch_name: '',
       switch_port: '',
       rack_name: '',
@@ -145,6 +181,12 @@ export default function DeviceProvisioning({
       subnet_mask: dev.subnet_mask || '',
       gateway: dev.gateway || '',
       vlan_id: dev.vlan_id || '',
+      connection_type: dev.connection_type || (dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? 'socket' : (dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? 'patch_panel' : 'switch')),
+      connected_socket_id: dev.connected_socket_id || '',
+      connected_socket_label: dev.connected_socket_label || '',
+      connected_socket_model_id: dev.connected_socket_model_id || '',
+      patch_panel_name: dev.patch_panel_name || (dev.switch_name?.startsWith('PP:') ? dev.switch_name.replace('PP:', '').trim() : ''),
+      patch_panel_port: dev.patch_panel_port || (dev.switch_name?.startsWith('PP:') ? dev.switch_port : ''),
       switch_name: dev.switch_name || '',
       switch_port: dev.switch_port || '',
       rack_name: dev.rack_name || '',
@@ -162,24 +204,26 @@ export default function DeviceProvisioning({
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    const selectedModel = boqModels.find((m) => m.id === deviceForm.boq_model_id);
-    const cleanPrefix = selectedModel
-      ? `${selectedModel.brand.substring(0, 3).toUpperCase()}-${selectedModel.model.replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase()}`
-      : 'DEV';
 
     const payload = {
       ...deviceForm,
       custom_label_id: deviceForm.custom_label_id.trim()
         ? deviceForm.custom_label_id.trim().toUpperCase()
-        : `${cleanPrefix}-${Math.floor(100 + Math.random() * 900)}`,
+        : '',
       serial_number: deviceForm.serial_number.trim() || null,
       mac_address: deviceForm.mac_address.trim() || null,
       ip_address: deviceForm.ip_address.trim() || null,
       subnet_mask: deviceForm.subnet_mask.trim() || '255.255.255.0',
       gateway: deviceForm.gateway.trim() || '192.168.10.1',
       vlan_id: deviceForm.vlan_id ? Number(deviceForm.vlan_id) : 10,
-      switch_name: deviceForm.switch_name.trim() || null,
-      switch_port: deviceForm.switch_port.trim() || null,
+      connection_type: deviceForm.connection_type || 'switch',
+      connected_socket_id: deviceForm.connected_socket_id || null,
+      connected_socket_label: deviceForm.connected_socket_label || null,
+      connected_socket_model_id: deviceForm.connected_socket_model_id || null,
+      patch_panel_name: deviceForm.patch_panel_name ? deviceForm.patch_panel_name.trim() : null,
+      patch_panel_port: deviceForm.patch_panel_port ? deviceForm.patch_panel_port.trim() : null,
+      switch_name: deviceForm.switch_name ? deviceForm.switch_name.trim() : null,
+      switch_port: deviceForm.switch_port ? deviceForm.switch_port.trim() : null,
       rack_name: deviceForm.rack_name ? deviceForm.rack_name.trim() : null,
       rack_unit: deviceForm.rack_unit ? deviceForm.rack_unit.trim() : null,
       floor_plan_id: deviceForm.floor_plan_id || null,
@@ -341,7 +385,9 @@ export default function DeviceProvisioning({
                         <div className="w-6 h-6 rounded-md bg-blue-600/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
                           <DevIcon className="w-3.5 h-3.5" />
                         </div>
-                        <span className="underline-offset-4 group-hover/label:underline">{dev.custom_label_id}</span>
+                        <span className="underline-offset-4 group-hover/label:underline">
+                          {dev.custom_label_id ? dev.custom_label_id : <span className="text-slate-500 italic text-xs">{isKu ? '— بێ لەیبڵ —' : '— No Label —'}</span>}
+                        </span>
                         <Eye className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover/label:opacity-100 transition ml-1" />
                       </div>
                     </td>
@@ -382,12 +428,28 @@ export default function DeviceProvisioning({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      {dev.switch_name ? (
-                        <span className="font-medium">
-                          {dev.switch_name} <span className="text-amber-400 font-mono">[{dev.switch_port}]</span>
-                        </span>
+                      {dev.connection_type === 'socket' || dev.connected_socket_id || dev.switch_name?.startsWith('Socket:') ? (
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                          <Plug className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>{dev.connected_socket_label || dev.switch_name?.replace('Socket:', '').trim() || 'Socket'}</span>
+                          {dev.switch_port && <span className="text-slate-400 font-mono text-[11px]">[{dev.switch_port}]</span>}
+                        </div>
+                      ) : dev.connection_type === 'patch_panel' || dev.patch_panel_name || dev.switch_name?.startsWith('PP:') ? (
+                        <div className="flex items-center gap-1.5 text-xs text-purple-400 font-medium">
+                          <Sliders className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                          <span>{dev.patch_panel_name || dev.switch_name?.replace('PP:', '').trim() || 'Patch Panel'}</span>
+                          {(dev.patch_panel_port || dev.switch_port) && (
+                            <span className="text-amber-400 font-mono text-[11px]">[{dev.patch_panel_port || dev.switch_port}]</span>
+                          )}
+                        </div>
+                      ) : dev.switch_name ? (
+                        <div className="flex items-center gap-1.5 text-xs text-blue-300 font-medium">
+                          <Network className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span>{dev.switch_name}</span>
+                          {dev.switch_port && <span className="text-amber-400 font-mono text-[11px]">[{dev.switch_port}]</span>}
+                        </div>
                       ) : (
-                        <span className="text-slate-600 italic">Unpatched</span>
+                        <span className="text-slate-600 italic text-xs">{isKu ? 'نەبەستراوە' : 'Unpatched'}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
@@ -589,34 +651,204 @@ export default function DeviceProvisioning({
                 </div>
               </div>
 
-              {/* Physical Switch & Rack Patching */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.switchName}</label>
-                  <input
-                    type="text"
-                    list="switches-list"
-                    value={deviceForm.switch_name}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, switch_name: e.target.value })}
-                    placeholder="e.g. SW-CORE-RACK-48P"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
-                  />
-                  <datalist id="switches-list">
-                    <option value="SW-CORE-RACK-48P" />
-                    <option value="SW-EDGE-POOL-24P" />
-                    <option value="SW-CCTV-SEC-24P" />
-                  </datalist>
+              {/* Uplink / Connection Selection: Socket vs Patch Panel vs Switch */}
+              <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Network className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{t.connectionType || (isKu ? 'شێوازی بەستنەوە (Connection)' : 'Connection Type')}</span>
+                  </label>
+                  <div className="inline-flex rounded-xl p-1 bg-slate-950 border border-slate-800 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setDeviceForm({ ...deviceForm, connection_type: 'socket' })}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 ${
+                        deviceForm.connection_type === 'socket'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Plug className="w-3.5 h-3.5" />
+                      <span>{t.connSocket || (isKu ? 'سۆکێت' : 'Socket')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeviceForm({ ...deviceForm, connection_type: 'patch_panel' })}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 ${
+                        deviceForm.connection_type === 'patch_panel'
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>{t.connPatchPanel || (isKu ? 'پاچ پەناڵ' : 'Patch Panel')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeviceForm({ ...deviceForm, connection_type: 'switch' })}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 ${
+                        deviceForm.connection_type === 'switch'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Network className="w-3.5 h-3.5" />
+                      <span>{t.connSwitch || (isKu ? 'سویچ' : 'Switch')}</span>
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">{t.switchPortNumber}</label>
-                  <input
-                    type="text"
-                    value={deviceForm.switch_port}
-                    onChange={(e) => setDeviceForm({ ...deviceForm, switch_port: e.target.value })}
-                    placeholder="e.g. Port 14 or Gi1/0/14"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white"
-                  />
-                </div>
+
+                {/* Sub-form based on Connection Type */}
+                {deviceForm.connection_type === 'socket' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {isKu ? '١- جۆری سۆکێت (BOQ Model)' : '1. Socket BOQ Type'}
+                      </label>
+                      <select
+                        value={deviceForm.connected_socket_model_id}
+                        onChange={(e) => {
+                          const modelId = e.target.value;
+                          setDeviceForm({
+                            ...deviceForm,
+                            connected_socket_model_id: modelId,
+                            connected_socket_id: '',
+                            connected_socket_label: '',
+                          });
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="">{isKu ? '— هەڵبژاردنی جۆری سۆکێت —' : '— Select Socket Model —'}</option>
+                        {socketBoqModels.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.brand} {m.model}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {isKu ? '٢- سۆکێتی بەستراو (دیڤایس)' : '2. Connected Socket (Device)'}
+                      </label>
+                      <select
+                        value={deviceForm.connected_socket_id}
+                        onChange={(e) => {
+                          const devId = e.target.value;
+                          const chosenSocket = socketDevices.find((s) => s.id === devId);
+                          setDeviceForm({
+                            ...deviceForm,
+                            connected_socket_id: devId,
+                            connected_socket_label: chosenSocket?.custom_label_id || '',
+                            switch_name: chosenSocket?.custom_label_id ? `Socket: ${chosenSocket.custom_label_id}` : (deviceForm.switch_name || 'Socket'),
+                          });
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="">{isKu ? '— دیاریکردنی سۆکێت —' : '— Select Specific Socket —'}</option>
+                        {socketDevices.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.custom_label_id ? `[${s.custom_label_id}]` : `[ID: ${s.id.slice(0, 8)}]`} - {s.floor_plan?.name || s.zone || 'Villa'} {s.notes ? `(${s.notes})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {socketDevices.length === 0 && (
+                        <p className="text-[10px] text-amber-400 mt-1">
+                          {isKu ? '⚠️ هیچ سۆکێتێکی پرۆڤیژنکراو لەم جۆرە نەدۆزرایەوە، سەرەتا لە بەشی سۆکێت زیاد بکە.' : '⚠️ No provisioned socket instances found for this model yet.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {deviceForm.connection_type === 'patch_panel' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {t.patchPanelName || (isKu ? 'ناوی پاچ پەناڵ (Patch Panel)' : 'Patch Panel')}
+                      </label>
+                      <input
+                        type="text"
+                        list="patch-panels-list"
+                        value={deviceForm.patch_panel_name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDeviceForm({
+                            ...deviceForm,
+                            patch_panel_name: val,
+                            switch_name: val ? `PP: ${val}` : deviceForm.switch_name,
+                          });
+                        }}
+                        placeholder="e.g. PP-IDF01-24P"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                      />
+                      <datalist id="patch-panels-list">
+                        <option value="PP-IDF01-24P" />
+                        <option value="PP-IDF02-24P" />
+                        <option value="PP-IDF03-24P" />
+                        <option value="PP-IDF04-24P" />
+                        <option value="PP-MAIN-MDF-48P" />
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {t.patchPanelPort || (isKu ? 'ژمارەی پۆرت (Port)' : 'Port')}
+                      </label>
+                      <input
+                        type="text"
+                        value={deviceForm.patch_panel_port}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDeviceForm({
+                            ...deviceForm,
+                            patch_panel_port: val,
+                            switch_port: val || deviceForm.switch_port,
+                          });
+                        }}
+                        placeholder="e.g. Port 12"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {deviceForm.connection_type === 'switch' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {t.switchName || (isKu ? 'ناوی سویچ' : 'Switch Name')}
+                      </label>
+                      <input
+                        type="text"
+                        list="switches-list"
+                        value={deviceForm.switch_name}
+                        onChange={(e) => setDeviceForm({ ...deviceForm, switch_name: e.target.value })}
+                        placeholder="e.g. SW-CORE-RACK-48P"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                      <datalist id="switches-list">
+                        <option value="SW-CORE-RACK-48P" />
+                        <option value="SW-EDGE-POOL-24P" />
+                        <option value="SW-CCTV-SEC-24P" />
+                        <option value="SW-POE-MAIN-48P" />
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        {t.switchPortNumber || (isKu ? 'ژمارەی پۆرت' : 'Switch Port')}
+                      </label>
+                      <input
+                        type="text"
+                        value={deviceForm.switch_port}
+                        onChange={(e) => setDeviceForm({ ...deviceForm, switch_port: e.target.value })}
+                        placeholder="e.g. Port 14 or Gi1/0/14"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Site Plan / Floor Plan & Placement Zone & Estate Zone */}

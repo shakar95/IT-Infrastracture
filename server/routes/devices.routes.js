@@ -5,6 +5,26 @@ import { validateDeviceGuardrails, GuardrailError } from '../services/guardrail.
 
 const router = express.Router();
 
+// Helper to format device response cleanly for clients
+export function formatDeviceOutput(d) {
+  if (!d) return d;
+  const isUnlabeled = !d.custom_label_id || d.custom_label_id.startsWith('UNLABELED-');
+  const customFieldVals = (typeof d.custom_field_values === 'object' && d.custom_field_values) ? d.custom_field_values : {};
+
+  return {
+    ...d,
+    custom_label_id: isUnlabeled ? '' : d.custom_label_id,
+    connection_type: d.connection_type || customFieldVals.connection_type || 'switch',
+    connected_socket_id: d.connected_socket_id || customFieldVals.connected_socket_id || null,
+    connected_socket_label: d.connected_socket_label || customFieldVals.connected_socket_label || null,
+    connected_socket_model_id: d.connected_socket_model_id || customFieldVals.connected_socket_model_id || null,
+    patch_panel_name: d.patch_panel_name || customFieldVals.patch_panel_name || null,
+    patch_panel_port: d.patch_panel_port || customFieldVals.patch_panel_port || null,
+    boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : (d.boq_model || null),
+    floor_plan: d.floor_plans || d.floor_plan || null,
+  };
+}
+
 // Helper to fetch BOQ model and floor plan for guardrail checks
 async function getModelAndFloorPlan(boqModelId, floorPlanId) {
   if (isSupabaseConfigured) {
@@ -37,11 +57,7 @@ router.get('/', async (req, res) => {
       
       const { data, error } = await query;
       if (!error && data) {
-        let result = data.map((d) => ({
-          ...d,
-          boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : null,
-          floor_plan: d.floor_plans || null,
-        }));
+        let result = data.map((d) => formatDeviceOutput(d));
 
         if (project_id) {
           result = result.filter((d) => {
@@ -59,11 +75,13 @@ router.get('/', async (req, res) => {
           const s = search.toLowerCase();
           result = result.filter(
             (d) =>
-              d.custom_label_id.toLowerCase().includes(s) ||
+              (d.custom_label_id && d.custom_label_id.toLowerCase().includes(s)) ||
               (d.ip_address && d.ip_address.includes(s)) ||
               (d.mac_address && d.mac_address.toLowerCase().includes(s)) ||
               (d.serial_number && d.serial_number.toLowerCase().includes(s)) ||
               (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
+              (d.patch_panel_name && d.patch_panel_name.toLowerCase().includes(s)) ||
+              (d.connected_socket_label && d.connected_socket_label.toLowerCase().includes(s)) ||
               (d.boq_model && (d.boq_model.brand + ' ' + d.boq_model.model).toLowerCase().includes(s))
           );
         }
@@ -79,11 +97,11 @@ router.get('/', async (req, res) => {
         const model = mockBoqModels.find((m) => m.id === d.boq_model_id);
         const category = model ? mockCategories.find((c) => c.id === model.category_id) : null;
         const floorPlan = mockFloorPlans.find((fp) => fp.id === d.floor_plan_id);
-        return {
+        return formatDeviceOutput({
           ...d,
-          boq_model: model ? { ...model, category } : null,
-          floor_plan: floorPlan || null,
-        };
+          boq_models: model ? { ...model, categories: category } : null,
+          floor_plans: floorPlan || null,
+        });
       });
 
     if (status) result = result.filter((d) => d.installation_status === status);
@@ -94,11 +112,13 @@ router.get('/', async (req, res) => {
       const s = search.toLowerCase();
       result = result.filter(
         (d) =>
-          d.custom_label_id.toLowerCase().includes(s) ||
+          (d.custom_label_id && d.custom_label_id.toLowerCase().includes(s)) ||
           (d.ip_address && d.ip_address.includes(s)) ||
           (d.mac_address && d.mac_address.toLowerCase().includes(s)) ||
           (d.serial_number && d.serial_number.toLowerCase().includes(s)) ||
           (d.switch_name && d.switch_name.toLowerCase().includes(s)) ||
+          (d.patch_panel_name && d.patch_panel_name.toLowerCase().includes(s)) ||
+          (d.connected_socket_label && d.connected_socket_label.toLowerCase().includes(s)) ||
           (d.boq_model && (d.boq_model.brand + ' ' + d.boq_model.model).toLowerCase().includes(s))
       );
     }
@@ -121,11 +141,7 @@ router.get('/:id', async (req, res) => {
         .eq('id', id)
         .single();
       if (error) throw error;
-      return res.json({
-        ...d,
-        boq_model: d.boq_models ? { ...d.boq_models, category: d.boq_models.categories } : null,
-        floor_plan: d.floor_plans || null,
-      });
+      return res.json(formatDeviceOutput(d));
     }
 
     const device = mockDevices.find((d) => d.id === id);
@@ -135,11 +151,11 @@ router.get('/:id', async (req, res) => {
     const category = model ? mockCategories.find((c) => c.id === model.category_id) : null;
     const floorPlan = mockFloorPlans.find((fp) => fp.id === device.floor_plan_id);
 
-    res.json({
+    res.json(formatDeviceOutput({
       ...device,
-      boq_model: model ? { ...model, category } : null,
-      floor_plan: floorPlan || null,
-    });
+      boq_models: model ? { ...model, categories: category } : null,
+      floor_plans: floorPlan || null,
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -151,18 +167,48 @@ router.post('/', async (req, res) => {
     const deviceData = req.body;
     const { model } = await getModelAndFloorPlan(deviceData.boq_model_id, deviceData.floor_plan_id);
 
+    // Keep custom_label_id blank if left empty by the user - do not auto-generate fake labels!
+    const rawLabel = (deviceData.custom_label_id || '').trim();
+    const finalLabel = rawLabel || null;
+
+    const connection_type = deviceData.connection_type || 'switch';
+    const connected_socket_id = deviceData.connected_socket_id || null;
+    const connected_socket_label = deviceData.connected_socket_label || null;
+    const connected_socket_model_id = deviceData.connected_socket_model_id || null;
+    const patch_panel_name = deviceData.patch_panel_name || null;
+    const patch_panel_port = deviceData.patch_panel_port || null;
+
+    let derivedSwitchName = deviceData.switch_name || null;
+    let derivedSwitchPort = deviceData.switch_port || null;
+    if (connection_type === 'socket') {
+      derivedSwitchName = deviceData.switch_name || (connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket');
+    } else if (connection_type === 'patch_panel') {
+      derivedSwitchName = deviceData.switch_name || (patch_panel_name ? `PP: ${patch_panel_name}` : 'Patch Panel');
+      derivedSwitchPort = deviceData.switch_port || patch_panel_port || null;
+    }
+
+    const custom_field_values = {
+      ...(typeof deviceData.custom_field_values === 'object' && deviceData.custom_field_values ? deviceData.custom_field_values : {}),
+      connection_type,
+      connected_socket_id,
+      connected_socket_label,
+      connected_socket_model_id,
+      patch_panel_name,
+      patch_panel_port,
+    };
+
     const payload = {
       project_id: deviceData.project_id || 'proj-sitak',
       boq_model_id: deviceData.boq_model_id,
-      custom_label_id: deviceData.custom_label_id || `DEV-${Math.floor(100 + Math.random() * 900)}`,
-      serial_number: deviceData.serial_number || `SN-${Date.now().toString().slice(-6)}`,
-      mac_address: deviceData.mac_address || null,
-      ip_address: deviceData.ip_address || null,
+      custom_label_id: finalLabel,
+      serial_number: (deviceData.serial_number || '').trim() || null,
+      mac_address: (deviceData.mac_address || '').trim() || null,
+      ip_address: (deviceData.ip_address || '').trim() || null,
       subnet_mask: deviceData.subnet_mask || '255.255.255.0',
       gateway: deviceData.gateway || '192.168.10.1',
       vlan_id: Number(deviceData.vlan_id) || 10,
-      switch_name: deviceData.switch_name || null,
-      switch_port: deviceData.switch_port || null,
+      switch_name: derivedSwitchName,
+      switch_port: derivedSwitchPort,
       rack_name: deviceData.rack_name || null,
       rack_unit: deviceData.rack_unit || null,
       zone: deviceData.zone || null,
@@ -173,26 +219,55 @@ router.post('/', async (req, res) => {
       installation_status: deviceData.installation_status || 'Pending',
       config_backup_url: deviceData.config_backup_url || null,
       notes: deviceData.notes || '',
+      custom_field_values,
+      connection_type,
+      connected_socket_id,
+      connected_socket_label,
+      connected_socket_model_id,
+      patch_panel_name,
+      patch_panel_port,
     };
 
     if (isSupabaseConfigured) {
-      let { data, error } = await supabase.from('devices').insert([payload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+      let currentPayload = { ...payload };
+      let { data, error } = await supabase
+        .from('devices')
+        .insert([currentPayload])
+        .select('*, boq_models(*, categories(*)), floor_plans(*)')
+        .single();
 
-      // Graceful fallback if devices table does not yet have 'project_id' column in Supabase schema cache
-      if (error && (error.message?.includes('project_id') || error.code === 'PGRST204')) {
-        console.warn('Supabase devices table missing project_id column, retrying insert without project_id...');
-        const { project_id, ...payloadWithoutProject } = payload;
-        const retryResult = await supabase.from('devices').insert([payloadWithoutProject]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+      // Graceful fallback 1: If new connection columns don't exist in Supabase schema cache yet
+      if (error && (error.code === 'PGRST204' || error.message?.includes('connection_type') || error.message?.includes('patch_panel') || error.message?.includes('connected_socket'))) {
+        delete currentPayload.connection_type;
+        delete currentPayload.connected_socket_id;
+        delete currentPayload.connected_socket_label;
+        delete currentPayload.connected_socket_model_id;
+        delete currentPayload.patch_panel_name;
+        delete currentPayload.patch_panel_port;
+        const retryRes = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        data = retryRes.data;
+        error = retryRes.error;
+      }
+
+      // Graceful fallback 2: If project_id or zone column is missing
+      if (error && (error.message?.includes('project_id') || error.message?.includes('zone') || error.code === 'PGRST204')) {
+        delete currentPayload.project_id;
+        delete currentPayload.zone;
+        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
+      // Graceful fallback 3: If custom_label_id has NOT NULL or UNIQUE constraint before migration is executed
+      if (error && (error.code === '23502' || error.code === '23505') && !finalLabel) {
+        currentPayload.custom_label_id = `UNLABELED-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const retryResult = await supabase.from('devices').insert([currentPayload]).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
         data = retryResult.data;
         error = retryResult.error;
       }
 
       if (error) throw error;
-      return res.status(201).json({
-        ...data,
-        boq_model: data.boq_models ? { ...data.boq_models, category: data.boq_models.categories } : null,
-        floor_plan: data.floor_plans || null,
-      });
+      return res.status(201).json(formatDeviceOutput(data));
     }
 
     const newDevice = {
@@ -202,7 +277,7 @@ router.post('/', async (req, res) => {
     };
 
     mockDevices.push(newDevice);
-    res.status(201).json(newDevice);
+    res.status(201).json(formatDeviceOutput(newDevice));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -214,30 +289,69 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    const rawLabel = updates.custom_label_id !== undefined ? (updates.custom_label_id || '').trim() : undefined;
+    const finalLabel = rawLabel !== undefined ? (rawLabel || null) : undefined;
+
+    const connection_type = updates.connection_type;
+    const connected_socket_id = updates.connected_socket_id;
+    const connected_socket_label = updates.connected_socket_label;
+    const connected_socket_model_id = updates.connected_socket_model_id;
+    const patch_panel_name = updates.patch_panel_name;
+    const patch_panel_port = updates.patch_panel_port;
+
+    let derivedSwitchName = updates.switch_name;
+    let derivedSwitchPort = updates.switch_port;
+    if (connection_type === 'socket') {
+      derivedSwitchName = updates.switch_name || (connected_socket_label ? `Socket: ${connected_socket_label}` : 'Socket');
+    } else if (connection_type === 'patch_panel') {
+      derivedSwitchName = updates.switch_name || (patch_panel_name ? `PP: ${patch_panel_name}` : 'Patch Panel');
+      derivedSwitchPort = updates.switch_port || patch_panel_port || null;
+    }
+
+    const custom_field_values = {
+      ...(typeof updates.custom_field_values === 'object' && updates.custom_field_values ? updates.custom_field_values : {}),
+      ...(connection_type ? { connection_type } : {}),
+      ...(connected_socket_id !== undefined ? { connected_socket_id } : {}),
+      ...(connected_socket_label !== undefined ? { connected_socket_label } : {}),
+      ...(connected_socket_model_id !== undefined ? { connected_socket_model_id } : {}),
+      ...(patch_panel_name !== undefined ? { patch_panel_name } : {}),
+      ...(patch_panel_port !== undefined ? { patch_panel_port } : {}),
+    };
+
     if (isSupabaseConfigured) {
       const deviceUpdatePayload = {
         boq_model_id: updates.boq_model_id,
-        custom_label_id: updates.custom_label_id,
-        serial_number: updates.serial_number,
-        mac_address: updates.mac_address,
-        ip_address: updates.ip_address || null,
+        custom_label_id: finalLabel,
+        serial_number: updates.serial_number !== undefined ? ((updates.serial_number || '').trim() || null) : undefined,
+        mac_address: updates.mac_address !== undefined ? ((updates.mac_address || '').trim() || null) : undefined,
+        ip_address: updates.ip_address !== undefined ? ((updates.ip_address || '').trim() || null) : undefined,
         subnet_mask: updates.subnet_mask,
         gateway: updates.gateway,
-        vlan_id: Number(updates.vlan_id) || 10,
-        switch_name: updates.switch_name,
-        switch_port: updates.switch_port,
+        vlan_id: updates.vlan_id !== undefined ? (Number(updates.vlan_id) || 10) : undefined,
+        switch_name: derivedSwitchName,
+        switch_port: derivedSwitchPort,
         rack_name: updates.rack_name,
         rack_unit: updates.rack_unit,
         zone: updates.zone !== undefined ? (updates.zone || null) : undefined,
         placement_zone: updates.placement_zone,
-        floor_plan_id: updates.floor_plan_id || null,
+        floor_plan_id: updates.floor_plan_id !== undefined ? (updates.floor_plan_id || null) : undefined,
         pos_x: updates.pos_x ?? null,
         pos_y: updates.pos_y ?? null,
         installation_status: updates.installation_status,
         config_backup_url: updates.config_backup_url,
         notes: updates.notes,
+        custom_field_values,
+        connection_type,
+        connected_socket_id,
+        connected_socket_label,
+        connected_socket_model_id,
+        patch_panel_name,
+        patch_panel_port,
         updated_at: new Date().toISOString(),
       };
+
+      // Remove undefined keys
+      Object.keys(deviceUpdatePayload).forEach((k) => deviceUpdatePayload[k] === undefined && delete deviceUpdatePayload[k]);
 
       let { data, error } = await supabase
         .from('devices')
@@ -246,9 +360,21 @@ router.put('/:id', async (req, res) => {
         .select('*, boq_models(*, categories(*)), floor_plans(*)')
         .single();
 
-      // Graceful fallback if devices table does not yet have 'zone' column
+      // Graceful fallback 1: If new connection columns don't exist in Supabase schema cache yet
+      if (error && (error.code === 'PGRST204' || error.message?.includes('connection_type') || error.message?.includes('patch_panel') || error.message?.includes('connected_socket'))) {
+        delete deviceUpdatePayload.connection_type;
+        delete deviceUpdatePayload.connected_socket_id;
+        delete deviceUpdatePayload.connected_socket_label;
+        delete deviceUpdatePayload.connected_socket_model_id;
+        delete deviceUpdatePayload.patch_panel_name;
+        delete deviceUpdatePayload.patch_panel_port;
+        const retryRes = await supabase.from('devices').update(deviceUpdatePayload).eq('id', id).select('*, boq_models(*, categories(*)), floor_plans(*)').single();
+        data = retryRes.data;
+        error = retryRes.error;
+      }
+
+      // Graceful fallback 2: If zone column is missing
       if (error && (error.message?.includes('zone') || error.code === 'PGRST204')) {
-        console.warn('Supabase devices missing zone column on update, retrying without zone...');
         delete deviceUpdatePayload.zone;
         const retryResult = await supabase
           .from('devices')
@@ -260,19 +386,28 @@ router.put('/:id', async (req, res) => {
         error = retryResult.error;
       }
 
+      // Graceful fallback 3: If custom_label_id has NOT NULL or UNIQUE constraint before migration is executed
+      if (error && (error.code === '23502' || error.code === '23505') && finalLabel === null) {
+        deviceUpdatePayload.custom_label_id = `UNLABELED-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const retryResult = await supabase
+          .from('devices')
+          .update(deviceUpdatePayload)
+          .eq('id', id)
+          .select('*, boq_models(*, categories(*)), floor_plans(*)')
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
       if (error) throw error;
-      return res.json({
-        ...data,
-        boq_model: data.boq_models ? { ...data.boq_models, category: data.boq_models.categories } : null,
-        floor_plan: data.floor_plans || null,
-      });
+      return res.json(formatDeviceOutput(data));
     }
 
     const idx = mockDevices.findIndex((d) => d.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Device not found' });
 
-    mockDevices[idx] = { ...mockDevices[idx], ...updates, updated_at: new Date().toISOString() };
-    res.json(mockDevices[idx]);
+    mockDevices[idx] = { ...mockDevices[idx], ...updates, custom_field_values, updated_at: new Date().toISOString() };
+    res.json(formatDeviceOutput(mockDevices[idx]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

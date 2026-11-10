@@ -1530,7 +1530,7 @@ export default function InteractiveMap({
                         {/* Persistent High-Contrast Label Pill Under Pin */}
                         <div className="mt-1 px-1.5 py-0.5 rounded-md bg-slate-950/95 border border-slate-700/80 shadow-md pointer-events-none whitespace-nowrap">
                           <span className="text-[9px] font-bold font-mono text-slate-200 tracking-tight block leading-none">
-                            {dev.custom_label_id}
+                            {dev.custom_label_id || model?.model || (isKu ? 'بێ لەیبڵ' : 'No Label')}
                           </span>
                         </div>
 
@@ -1540,7 +1540,7 @@ export default function InteractiveMap({
                             <div className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl text-center space-y-0.5">
                               <div className="flex items-center justify-center gap-1.5">
                                 <DevIcon className="w-3.5 h-3.5 text-blue-400" />
-                                <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id}</p>
+                                <p className="text-xs font-bold font-mono text-white">{dev.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}</p>
                               </div>
                               <p className="text-[10px] text-blue-300 font-mono">{dev.ip_address || 'No IP'}</p>
                               <p className="text-[10px] text-slate-400">{model ? `${model.brand} ${model.model}` : ''}</p>
@@ -1735,7 +1735,7 @@ export default function InteractiveMap({
                                           <div className="min-w-0">
                                             <div className="flex items-center gap-1.5">
                                               <span className="font-mono text-[11px] font-bold text-white truncate group-hover:text-indigo-300 transition">
-                                                {dev.custom_label_id}
+                                                {dev.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}
                                               </span>
                                               {formattedUnit && (
                                                 <span className="text-[9px] font-mono px-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
@@ -1974,7 +1974,7 @@ export default function InteractiveMap({
                                 <div className="min-w-0 space-y-0.5">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-mono text-xs font-bold text-white group-hover:text-indigo-300 transition tracking-tight">
-                                      {dev.custom_label_id}
+                                      {dev.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}
                                     </span>
                                     {formattedUnit && (
                                       <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
@@ -2053,7 +2053,7 @@ export default function InteractiveMap({
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">
                         {t.inspectTitle} {category ? `• ${isKu ? (category.name_ku || category.name) : category.name}` : ''}
                       </span>
-                      <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id}</h3>
+                      <h3 className="text-base font-bold text-white font-mono">{selectedDevice.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}</h3>
                     </div>
                   </div>
                   <button
@@ -2535,7 +2535,7 @@ export default function InteractiveMap({
                               <DevIcon className="w-4 h-4" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold font-mono text-white truncate">{dev.custom_label_id}</p>
+                              <p className="text-xs font-bold font-mono text-white truncate">{dev.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}</p>
                               <p className="text-[10px] text-slate-400 truncate">
                                 {model ? `${model.brand} ${model.model}` : 'ELV Unit'}
                               </p>
@@ -2899,7 +2899,7 @@ export default function InteractiveMap({
                                   <div className="min-w-0 space-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono text-xs font-bold text-white tracking-tight">
-                                        {dev.custom_label_id}
+                                        {dev.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}
                                       </span>
                                       {cat && (
                                         <span
@@ -2953,7 +2953,7 @@ export default function InteractiveMap({
                         <span className="text-xs text-slate-400">
                           {selectedDeviceToAssign ? (
                             <span className="text-blue-400 font-semibold">
-                              {isKu ? 'ئامێری هەڵبژێردراو:' : 'Selected:'} <strong className="text-white font-mono">{selectedDeviceToAssign.custom_label_id}</strong>
+                              {isKu ? 'ئامێری هەڵبژێردراو:' : 'Selected:'} <strong className="text-white font-mono">{selectedDeviceToAssign.custom_label_id || (isKu ? '— بێ لەیبڵ —' : '— No Label —')}</strong>
                             </span>
                           ) : (
                             <span>{isKu ? 'تکایە ئامێرێک لە لیستەکە هەڵبژێرە' : 'Select an equipment to pin'}</span>

@@ -23,6 +23,7 @@ import {
   Cpu,
   Layers,
   Router,
+  Plug,
 } from 'lucide-react';
 
 export const ICT_ICON_MAP = {
@@ -49,6 +50,7 @@ export const ICT_ICON_MAP = {
   Eye,
   Cpu,
   Layers,
+  Plug,
 };
 
 /**
@@ -96,6 +98,18 @@ export function getIctDeviceIcon(dev = {}, boqModel = null, category = null) {
     corpus.includes('nvr channel')
   ) {
     return Camera;
+  }
+
+  // Sockets / Data Outlets / Faceplates
+  if (
+    corpus.includes('socket') ||
+    corpus.includes('outlet') ||
+    corpus.includes('faceplate') ||
+    corpus.includes('keystone') ||
+    corpus.includes('سۆکێت') ||
+    corpus.includes('plug')
+  ) {
+    return Plug;
   }
 
   // Wi-Fi Access Points / Outdoor Mesh / Wireless APs

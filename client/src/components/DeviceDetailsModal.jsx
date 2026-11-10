@@ -19,6 +19,8 @@ import {
   Hash,
   Network,
   RotateCcw,
+  Plug,
+  Sliders,
 } from 'lucide-react';
 import { translations } from '../i18n/translations';
 import { DEFAULT_ICT_IMAGE, getEffectiveProductImage } from '../utils/defaultIctImage';
@@ -107,19 +109,21 @@ export default function DeviceDetailsModal({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg sm:text-xl font-bold font-mono text-white tracking-wide">
-                    {device.custom_label_id}
+                    {device.custom_label_id ? device.custom_label_id : <span className="text-slate-500 italic text-base font-sans">{isKu ? '— بێ لەیبڵ —' : '— No Label —'}</span>}
                   </h2>
-                  <button
-                    onClick={() => handleCopy(device.custom_label_id, 'label')}
-                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
-                    title="Copy Label"
-                  >
-                    {copiedKey === 'label' ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+                  {device.custom_label_id && (
+                    <button
+                      onClick={() => handleCopy(device.custom_label_id, 'label')}
+                      className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
+                      title="Copy Label"
+                    >
+                      {copiedKey === 'label' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  )}
                 </div>
                 <p className="text-xs text-slate-400">
                   {model ? `${model.brand} ${model.model}` : 'Generic Asset'}
@@ -367,18 +371,36 @@ export default function DeviceDetailsModal({
 
             {/* Middle Section: Switch Port & Physical Rack Location */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Switch Connection */}
+              {/* Uplink Connection */}
               <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-1.5">
                 <div className="flex items-center gap-2 text-slate-400 text-xs">
-                  <Network className="w-4 h-4 text-blue-400" />
-                  <span className="font-semibold uppercase tracking-wider">{t.switchPort}</span>
+                  {device.connection_type === 'socket' || device.connected_socket_id || device.switch_name?.startsWith('Socket:') ? (
+                    <Plug className="w-4 h-4 text-emerald-400" />
+                  ) : device.connection_type === 'patch_panel' || device.patch_panel_name || device.switch_name?.startsWith('PP:') ? (
+                    <Sliders className="w-4 h-4 text-purple-400" />
+                  ) : (
+                    <Network className="w-4 h-4 text-blue-400" />
+                  )}
+                  <span className="font-semibold uppercase tracking-wider">
+                    {device.connection_type === 'socket' || device.connected_socket_id || device.switch_name?.startsWith('Socket:')
+                      ? (isKu ? 'سۆکێت' : 'Socket Connection')
+                      : device.connection_type === 'patch_panel' || device.patch_panel_name || device.switch_name?.startsWith('PP:')
+                      ? (isKu ? 'پاچ پەناڵ' : 'Patch Panel')
+                      : t.switchPort}
+                  </span>
                 </div>
                 <div className="text-sm font-bold text-white">
-                  {device.switch_name || <span className="text-slate-500 italic">Not Patched</span>}
+                  {device.connection_type === 'socket' || device.connected_socket_id || device.switch_name?.startsWith('Socket:') ? (
+                    <span className="text-emerald-400">{device.connected_socket_label || device.switch_name?.replace('Socket:', '').trim() || 'Socket'}</span>
+                  ) : device.connection_type === 'patch_panel' || device.patch_panel_name || device.switch_name?.startsWith('PP:') ? (
+                    <span className="text-purple-400">{device.patch_panel_name || device.switch_name?.replace('PP:', '').trim() || 'Patch Panel'}</span>
+                  ) : (
+                    device.switch_name || <span className="text-slate-500 italic">Not Patched</span>
+                  )}
                 </div>
-                {device.switch_port && (
+                {(device.switch_port || device.patch_panel_port) && (
                   <div className="inline-block px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    {device.switch_port}
+                    {device.patch_panel_port || device.switch_port}
                   </div>
                 )}
               </div>

@@ -38,7 +38,7 @@ export default function CategoryBuilder({
     ],
   });
 
-  const availableIcons = ['Layers', 'Tv', 'Cpu', 'Volume2', 'Monitor', 'Film', 'Wifi', 'Camera', 'ShieldCheck', 'Key', 'Bell', 'PhoneCall', 'Server'];
+  const availableIcons = ['Layers', 'Tv', 'Cpu', 'Volume2', 'Monitor', 'Film', 'Wifi', 'Camera', 'ShieldCheck', 'Key', 'Bell', 'PhoneCall', 'Server', 'Plug'];
   const allZones = ['indoor', 'outdoor', 'rack', 'safe_room'];
 
   const toggleZone = (zone) => {
