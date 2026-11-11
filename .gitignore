@@ -35,3 +35,8 @@ Desktop.ini
 *.sln
 *.sw?
 
+# Database dumps & local backups
+*.backup.sql
+sitak_*.sql
+supabase/
+
